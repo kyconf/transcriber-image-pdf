@@ -695,6 +695,7 @@ async function transcribeImages(images, sheetName) {
   const responses = []; // To store results for all files
   let count = 0;
   deleteFileByName("page-1.png");
+  deleteFileByName("page-001.png");
   for (const image of images) {
     console.log(`Transcribing image: ${image}`);
 
