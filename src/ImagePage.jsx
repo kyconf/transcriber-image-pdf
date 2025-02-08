@@ -48,9 +48,9 @@ function ImagePage() {
         <button
           onClick={handleTranscribe}
           disabled={loading}
-          className={`p-4 ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-500'} text-white rounded-lg text-xl hover:bg-blue-600 transition-colors`}
+          className={`p-4 ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-500'} text-white rounded-lg text-xl hover:bg-blue-600 transition-colors font-bold`}
         >
-          {loading ? 'Transcribing...' : 'TRANSCRIBE'}
+          {loading ? 'Transcribing...' : 'TRANSCRIBE IMAGES'}
         </button>
       </div>
 
@@ -61,33 +61,22 @@ function ImagePage() {
       )}
 
       <div className="flex-1 overflow-auto p-4">
-        {preview && preview.length > 0 ? (
+
           <div className="p-4 space-y-4">
-            {preview.map((entry, index) => (
-              <div key={index}>
+
+  
                 <div className="flex justify-end">
-                  <div className="text-base inline-block bg-blue-500 text-white p-3 rounded-lg">
-                    {entry.user_prompt}
-                  </div>
-                </div>
+
+       
                 <div className="flex justify-start mt-4">
-                  <div
-                    className="text-base inline-block bg-gray-700 text-white p-3 rounded-lg"
-                    dangerouslySetInnerHTML={{
-                      __html: entry.response
-                        .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-                        .replace(/\*(.*?)\*/g, '<i>$1</i>')
-                        .replace(/__(.*?)__/g, '<u>$1</u>')
-                        .replace(/\n/g, '<br>')
-                    }}
-                  ></div>
+                  
                 </div>
               </div>
-            ))}
+              <h1 className="text-center">Always check Images before processing!</h1>
           </div>
-        ) : (
-          <h1 className="text-center">No data available. Submit a new prompt!</h1>
-        )}
+ 
+    
+  
       </div>
 
       {showPopup && (

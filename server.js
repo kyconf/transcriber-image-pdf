@@ -509,7 +509,6 @@ async function clearProcessingQueue() {
   try {
     console.log("🛑 Clearing previous processing queue...");
 
-    // 1️⃣ 🗑 Clear local `converted_images/` folder
     if (fs.existsSync(OUTPUT_DIR)) {
       fs.readdirSync(OUTPUT_DIR).forEach(file => {
         if (file.endsWith(".png")) {
@@ -521,11 +520,8 @@ async function clearProcessingQueue() {
       console.log("📂 No local images to clear.");
     }
 
-    // 2️⃣ 🗑 Clear uploaded images from Google Drive
     await clearOldDriveFiles(FOLDER_PDF);
 
-    // 3️⃣ (Optional) If there's an async queue system, reset it here
-    // Reset any variables tracking ongoing tasks
     console.log("🚀 Processing queue cleared. Ready for new tasks.");
   } catch (error) {
     console.error("❌ Error clearing processing queue:", error.message);
@@ -549,7 +545,11 @@ async function convertPdfToImages(pdfPath, outputDir) {
   try {
     console.log(`Converting PDF: ${pdfPath} to images...`);
     await pdfPoppler.convert(pdfPath, options);
-    const images = fs.readdirSync(outputDir).filter((file) => file.endsWith(".png"));
+    let images = fs.readdirSync(outputDir).filter((file) => file.endsWith(".png"));
+    
+    // Limit to a maximum of 55 images
+    images = images.slice(0, 55);
+
     console.log(`✅ Converted ${images.length} pages to images.`);
     return images.map((img) => path.join(outputDir, img));
   } catch (error) {
@@ -590,21 +590,21 @@ async function createDefaultSheet(spreadsheetId) {
     const request = {
       spreadsheetId: spreadsheetId,
       resource: {
-        requests: [{ addSheet: {} }], // No title → Google Sheets auto-generates one
+        requests: [{ addSheet: {} }], 
       },
     };
 
     const response = await sheets.spreadsheets.batchUpdate(request);
     const newSheet = response.data.replies[0].addSheet.properties;
     console.log(`✅ New sheet created: ${newSheet.title}`);
-    return newSheet.title; // Returns the generated name (e.g., Sheet11, Sheet12)
+    return newSheet.title; 
   } catch (error) {
     console.error('❌ Error creating sheet:', error.message);
     throw error;
   }
 }
 
-// Function to download a PDF file from Google Drive
+
 async function downloadPdfFromDrive(fileId) {
   try {
     const response = await drive.files.get(
@@ -648,7 +648,6 @@ async function listPdfFilesInFolder(folderId) {
   }
 }
 
-// Update the processPdfAndUpload function to use Google Drive
 async function processPdfAndUpload() {
   try {
     await clearProcessingQueue(); // 🚀 Ensure everything is clean before processing
@@ -842,6 +841,29 @@ async function deleteFileByName(fileName) {
     }
   } catch (error) {
     console.error('❌ Error deleting file:', error.message);
+  }
+}
+
+async function clearOldDriveFiles(folderId) {
+  try {
+    const response = await drive.files.list({
+      q: `'${folderId}' in parents and trashed = false`,
+      fields: 'files(id, name)',
+    });
+
+    const files = response.data.files;
+
+    if (!files.length) {
+      console.log(`No files found in folder: ${folderId}`);
+      return;
+    }
+
+    for (const file of files) {
+      await drive.files.delete({ fileId: file.id });
+      console.log(`✅ Deleted file: ${file.name} (${file.id})`);
+    }
+  } catch (error) {
+    console.error('❌ Error clearing files from Google Drive:', error.message);
   }
 }
 
