@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* width */
+::-webkit-scrollbar {
+    width: 10px;
+  }
+  
+  /* Track */
+  ::-webkit-scrollbar-track {
+    background: #1e1f23; 
+  }
+   
+  /* Handle */
+  ::-webkit-scrollbar-thumb {
+    background: #565656; 
+  }
+  
+  /* Handle on hover */
+  ::-webkit-scrollbar-thumb:hover {
+    background: #4d4d4d; 
+  }
+
+  html, body, #root {
+    height: 100%; /* Ensure full height */
+    margin: 0; /* Remove default margin */
+    padding: 0; /* Remove default padding */
+  }
