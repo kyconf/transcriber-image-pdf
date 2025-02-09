@@ -369,6 +369,7 @@ rl.on('line', async (userInput) => {
 app.post('/transcribe', async (req, res) => {
   try {
     const files = await listFilesInFolder(FOLDER_ID);
+    const newSheet = await createDefaultSheet(SPREADSHEET_ID);
 
     if (files.length === 0) {
       console.log('No files found in the folder.');
@@ -450,7 +451,7 @@ app.post('/transcribe', async (req, res) => {
           count++;
           const valuesToAppend = [[count, parseMessage.passage, parseMessage.question, parseMessage.correct_answer]];
 
-          await appendToSheet(valuesToAppend); // Append to Google Sheets
+          await appendToSheet(valuesToAppend, newSheet); // Append to Google Sheets
 
           console.log(`Response for ${file.name} appended to Google Sheets!`);
 
