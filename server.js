@@ -804,15 +804,23 @@ async function transcribeImages(images, sheetName) {
     }
   }
  
-  await exportSheetToXLSX(SPREADSHEET_ID, sheetName, 'output.xlsx');
-  await uploadXLSXToDrive('output.xlsx', EXPORT_FOLDER_ID);
+  // Generate unique filename
+  const uniqueFileName = generateUniqueFileName(sheetName);
   
-await processExcelFile(filePath, sheetName)
-.then(result => console.log('Final JSON result:', JSON.stringify(result, null, 2)))
-.catch(error => console.error('Processing failed:', error.message));
+  await exportSheetToXLSX(SPREADSHEET_ID, sheetName, uniqueFileName);
+  await uploadXLSXToDrive(uniqueFileName, EXPORT_FOLDER_ID);
+  
+  await processExcelFile(uniqueFileName, sheetName)
+    .then(result => console.log('Final JSON result:', JSON.stringify(result, null, 2)))
+    .catch(error => console.error('Processing failed:', error.message));
 
-
-
+  // Optionally, clean up the local file after processing
+  try {
+    fs.unlinkSync(uniqueFileName);
+    console.log(`✅ Cleaned up temporary file: ${uniqueFileName}`);
+  } catch (error) {
+    console.error(`❌ Error cleaning up file: ${error.message}`);
+  }
 
   return responses;
 }
@@ -1098,3 +1106,9 @@ const PORT = 3000;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
+
+// Add this function to generate a unique filename
+function generateUniqueFileName(sheetName) {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return `${sheetName}_${timestamp}.xlsx`;
+}
