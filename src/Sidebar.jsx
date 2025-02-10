@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileImage, FileSearch, HardDrive, FileSpreadsheet, MessageCircleQuestion } from 'lucide-react';
+import { Shapes, FileImage, FileSearch, HardDrive, FileSpreadsheet, MessageCircleQuestion } from 'lucide-react';
 
 function Sidebar({ loading }) {
   const navigate = useNavigate();
@@ -27,6 +27,11 @@ function Sidebar({ loading }) {
         <FileSearch size={20} />
         PDF
       </button>
+
+      <button onClick={navToPDF} disabled={loading} className="m-2 flex items-center gap-3 p-3 rounded-lg hover:bg-gray-700 transition-colors">
+        <Shapes size={20} />
+        Classifier
+      </button>
       <div className="mt-auto p-4 gap-2 flex flex-row">
         <button
           className="flex items-center gap-2 w-full p-3 bg-gray-600 rounded-lg hover:bg-gray-500 transition-colors"
@@ -45,6 +50,7 @@ function Sidebar({ loading }) {
           <FileSpreadsheet size={20} />
           Sheets
         </button>
+
       </div>
     </div>
   );

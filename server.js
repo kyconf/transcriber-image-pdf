@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import OpenAI from 'openai';
 import readline from 'readline';
 import path from "path";
+import * as XLSX from 'xlsx';
 import fs from 'fs';
 import pdfPoppler from "pdf-poppler";
 import dotenv from 'dotenv';
@@ -29,7 +30,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const SERVICE_ACCOUNT_FILE = 'credentials.json'; // Path to your service account key file
 const SPREADSHEET_ID = '1-GMTSImDqWFahWiWU44iV108cfAN6UZc_QxaT08sTlE'; // Replace with your spreadsheet ID
 
-
+const EXPORT_FOLDER_ID = '1Cc4KiS3UGI53K0BjJfNlY-ds94szvD3p'; // Replace with your folder ID
 
 // Authenticate with Google Sheets
 const auth = new google.auth.GoogleAuth({   
@@ -223,45 +224,110 @@ app.get('/chat/response', async (req, res) =>  { //gets the info
     }
   });
 
+  let counting = 0;
+// Add this at the module level (outside of any function)
+let currentSheetRow = 0;
+let currentPageRow = 0;
 
-// Function to append data to Google Sheets
+async function createDefaultSheet(spreadsheetId) {
+  try {
+    const request = {
+      spreadsheetId: spreadsheetId,
+      resource: {
+        requests: [{ addSheet: {} }],
+      },
+    };
+
+    const response = await sheets.spreadsheets.batchUpdate(request);
+    const newSheet = response.data.replies[0].addSheet.properties;
+    console.log(`✅ New sheet created: ${newSheet.title}`);
+    currentSheetRow = 0;
+    currentPageRow = 0;
+
+    // Export the new sheet to XLSX
+
+
+    return newSheet.title;
+  } catch (error) {
+    console.error('❌ Error creating sheet:', error.message);
+    throw error;
+  }
+}
+
 async function appendToSheet(values, sheetName) {
-    if (!sheetName) {
-        console.error('Sheet name is undefined. Please provide a valid sheet name.');
-        return; // Exit the function if the sheet name is not defined
+  if (!sheetName) {
+    console.error('Sheet name is undefined. Please provide a valid sheet name.');
+    return;
+  }
+
+  try {
+    currentSheetRow++; // Increment the counter
+    if (currentSheetRow === 1) currentSheetRow = 2; // Start from row 2
+
+    // Check if the current row has data
+    const checkRange = `${sheetName}!B${currentSheetRow}`;
+    const checkResult = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: checkRange,
+    });
+
+    // If the row has data, skip to the next row
+    if (checkResult.data.values && checkResult.data.values.length > 0) {
+      currentSheetRow++;
     }
+    
+    const targetRange = `${sheetName}!B${currentSheetRow}`;
 
-    const rangeName = `${sheetName}!A1`; // Construct the range
-    try {
-        const sheet = await sheets.spreadsheets.values.get({
-            spreadsheetId: SPREADSHEET_ID,
-            range: rangeName, // Use the new sheet name for the range
-        });
+    const request = {
+      spreadsheetId: SPREADSHEET_ID,
+      range: targetRange,
+      valueInputOption: 'RAW',
+      resource: { values },
+    };
 
-        const existingRows = sheet.data.values ? sheet.data.values.length : 0;
+    await sheets.spreadsheets.values.append(request);
+    console.log(`✅ Data appended to row ${currentSheetRow}.`);
+  } catch (error) {
+    console.error('❌ Error appending to Google Sheets:', error.message);
+  }
+}
 
-        // Find the next available row, ensuring it doesn't use row 1 or row 28
-        let targetRow = existingRows + 1;
+async function TwiceToSheet(values, sheetName) {
+  if (!sheetName) {
+    console.error('Sheet name is undefined. Please provide a valid sheet name.');
+    return;
+  }
 
-        // Ensure row 1 and row 28 are skipped
-        while (targetRow === 1 || targetRow === 28) {
-            targetRow++; // Move to the next available row
-        }
+  try {
+    currentPageRow++; // Increment the counter
+    if (currentPageRow === 1) currentPageRow = 2; // Start from row 2
 
-        const targetRange = `${sheetName}!A${targetRow}`; // Define the cell to start inserting
+    // Check if the current row has data
+    const checkRange = `${sheetName}!E${currentPageRow}`;
+    const checkResult = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: checkRange,
+    });
 
-        const request = {
-            spreadsheetId: SPREADSHEET_ID,
-            range: targetRange,
-            valueInputOption: 'RAW',
-            resource: { values },
-        };
-
-        const result = await sheets.spreadsheets.values.append(request);
-        console.log(`✅ Data appended to row ${targetRow}, skipping rows 1 and 28.`);
-    } catch (error) {
-        console.error('❌ Error appending to Google Sheets:', error.message);
+    // If the row has data, skip to the next row
+    if (checkResult.data.values && checkResult.data.values.length > 0) {
+      currentPageRow++;
     }
+    
+    const targetRange = `${sheetName}!E${currentPageRow}`;
+
+    const request = {
+      spreadsheetId: SPREADSHEET_ID,
+      range: targetRange,
+      valueInputOption: 'RAW',
+      resource: { values },
+    };
+
+    await sheets.spreadsheets.values.append(request);
+    console.log(`✅ Data appended to row ${currentPageRow}.`);
+  } catch (error) {
+    console.error('❌ Error appending to Google Sheets:', error.message);
+  }
 }
 
 
@@ -384,6 +450,8 @@ app.post('/transcribe', async (req, res) => {
     const responses = []; // To store results for all files
     let count = 0;
     for (const file of files) {
+
+      counting = 0;
       // Check if the file is a PDF
       if (file.name.toLowerCase().endsWith('.pdf')) {
         console.log(`Processing PDF file: ${file.name}`);
@@ -586,26 +654,6 @@ async function uploadFileToDrive(filePath) {
   }
 }
 
-async function createDefaultSheet(spreadsheetId) {
-  try {
-    const request = {
-      spreadsheetId: spreadsheetId,
-      resource: {
-        requests: [{ addSheet: {} }], 
-      },
-    };
-
-    const response = await sheets.spreadsheets.batchUpdate(request);
-    const newSheet = response.data.replies[0].addSheet.properties;
-    console.log(`✅ New sheet created: ${newSheet.title}`);
-    return newSheet.title; 
-  } catch (error) {
-    console.error('❌ Error creating sheet:', error.message);
-    throw error;
-  }
-}
-
-
 async function downloadPdfFromDrive(fileId) {
   try {
     const response = await drive.files.get(
@@ -651,25 +699,18 @@ async function listPdfFilesInFolder(folderId) {
 
 async function processPdfAndUpload() {
   try {
-    await clearProcessingQueue(); // 🚀 Ensure everything is clean before processing
+    await clearProcessingQueue();
 
-    // List PDF files in the specified Google Drive folder
     const pdfFiles = await listPdfFilesInFolder(FOLDER_PDF);
-
-    // Sort PDF files in ascending order based on their names
     pdfFiles.sort((a, b) => a.name.localeCompare(b.name));
 
-    // 🔄 Start processing each PDF file
     for (const pdfFile of pdfFiles) {
       console.log(`Processing PDF file: ${pdfFile.name} (${pdfFile.id})`);
 
-      // Create a new sheet for each PDF
       const newSheetName = await createDefaultSheet(SPREADSHEET_ID);
 
-      // Download the PDF file
       const pdfFilePath = await downloadPdfFromDrive(pdfFile.id);
 
-      // Convert the downloaded PDF to images
       const images = await convertPdfToImages(pdfFilePath, OUTPUT_DIR);
 
       for (const image of images) {
@@ -678,33 +719,25 @@ async function processPdfAndUpload() {
 
       console.log(`✅ All images from ${pdfFile.name} uploaded to Google Drive.`);
 
-      // Transcribe images after uploading
       await transcribeImages(images, newSheetName);
     }
 
-    // List uploaded files
     await listFilesInFolder(FOLDER_PDF);
   } catch (error) {
     console.error("❌ Error processing PDF:", error);
-  } finally {
-    // No need to delete the first image here, as it's handled in transcribeImages
   }
 }
 
 // Function to transcribe images
 async function transcribeImages(images, sheetName) {
-  const responses = []; // To store results for all files
-  let count = 0;
-  deleteFileByName("page-1.png");
-  deleteFileByName("page-001.png");
+  const responses = [];
+
   for (const image of images) {
     console.log(`Transcribing image: ${image}`);
 
     try {
-      // Fetch the file content as Base64
       const base64Image = fs.readFileSync(image, { encoding: 'base64' });
 
-      // Pass the Base64 image to OpenAI API
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
@@ -746,10 +779,9 @@ async function transcribeImages(images, sheetName) {
         }
 
         console.log("Parsed Message:", newMessage);
-        count++;
-        const valuesToAppend = [[count, parseMessage.passage, parseMessage.question, parseMessage.correct_answer]];
+        const valuesToAppend = [[parseMessage.passage, parseMessage.question, parseMessage.correct_answer]];
 
-        await appendToSheet(valuesToAppend, sheetName); // Append to Google Sheets
+        await appendToSheet(valuesToAppend, sheetName);
 
         console.log(`Response for image appended to Google Sheets!`);
         responses.push({
@@ -762,15 +794,6 @@ async function transcribeImages(images, sheetName) {
           image: image,
           error: "Failed to parse OpenAI response",
         });
-      } finally {
-        // Delete the image file from Google Drive after processing
-        try {
-          const fileId = await getFileIdFromDrive(image); // Function to get the file ID
-          await drive.files.delete({ fileId });
-          console.log(`🗑️ Deleted image file from Google Drive: ${image}`);
-        } catch (error) {
-          console.error(`❌ Error deleting image from Google Drive:`, error.message);
-        }
       }
     } catch (error) {
       console.error(`Error processing image:`, error.message);
@@ -780,9 +803,23 @@ async function transcribeImages(images, sheetName) {
       });
     }
   }
+ 
+  await exportSheetToXLSX(SPREADSHEET_ID, sheetName, 'output.xlsx');
+  await uploadXLSXToDrive('output.xlsx', EXPORT_FOLDER_ID);
+  
+await processExcelFile(filePath, sheetName)
+.then(result => console.log('Final JSON result:', JSON.stringify(result, null, 2)))
+.catch(error => console.error('Processing failed:', error.message));
+
+
+
 
   return responses;
 }
+
+// Example usage
+const filePath = 'output.xlsx'; // Replace with the actual file path
+
 
 // Function to get the file ID from Google Drive
 async function getFileIdFromDrive(fileName) {
@@ -869,8 +906,192 @@ async function clearOldDriveFiles(folderId) {
   }
 }
 
+async function exportSheetToXLSX(spreadsheetId, sheetName, destinationPath) {
+  try {
+      const auth = new google.auth.GoogleAuth({
+          keyFile: SERVICE_ACCOUNT_FILE, // Use the credentials file
+          scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+      });
+
+      const sheets = google.sheets({ version: 'v4', auth });
+
+      // Fetch data from the specified sheet tab
+      const response = await sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: `${sheetName}!A1:Z1000`, // Adjust range as needed
+      });
+
+      const rows = response.data.values;
+      if (!rows || rows.length === 0) {
+          throw new Error(`No data found in sheet "${sheetName}".`);
+      }
+
+      // Convert the data to an XLSX format
+      const worksheet = XLSX.utils.aoa_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+      // Save to an XLSX file
+      XLSX.writeFile(workbook, destinationPath);
+      console.log(`✅ Sheet "${sheetName}" exported to ${destinationPath}`);
+  } catch (error) {
+      console.error('❌ Error exporting sheet to XLSX:', error.message);
+  }
+}
 
 
+
+// Function to upload a file (XLSX, PNG, or any type) to Google Drive
+async function uploadXLSXToDrive(filePath, folderId) {
+  try {
+    const fileName = path.basename(filePath);
+    const fileExtension = path.extname(filePath).toLowerCase();
+
+
+    // Set MIME type based on file extension
+    let mimeType;
+    if (fileExtension === '.xlsx') {
+      mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    } else if (fileExtension === '.png') {
+      mimeType = 'image/png';
+    } else if (fileExtension === '.jpg' || fileExtension === '.jpeg') {
+      mimeType = 'image/jpeg';
+    } else {
+      throw new Error(`Unsupported file type: ${fileExtension}`);
+    }
+
+    const fileMetadata = {
+      name: fileName,
+      parents: [folderId], // Upload to the specified Google Drive folder
+    };
+
+    const media = {
+      mimeType: mimeType,
+      body: fs.createReadStream(filePath),
+    };
+
+    const response = await drive.files.create({
+      requestBody: fileMetadata,
+      media: media,
+      fields: "id",
+    });
+
+    console.log(`✅ Uploaded ${fileName} to Google Drive with ID: ${response.data.id}`);
+    return response.data.id;
+  } catch (error) {
+    console.error("❌ Error uploading file to Google Drive:", error.message);
+    throw error;
+  }
+}
+
+async function processExcelFile(filePath, sheetName) {
+  try {
+    const data = fs.readFileSync(filePath);
+    const workbook = XLSX.read(data, {
+      type: 'buffer',
+      cellStyles: true,
+      cellNF: true,
+      cellFormula: true,
+      cellHTML: true,
+      raw: false
+    });
+
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+      header: 1,
+      raw: false
+    });
+
+    if (jsonData.length < 2) {
+      throw new Error('No valid data found in Excel file.');
+    }
+
+    const results = [];
+
+    for (let i = 1; i < jsonData.length; i++) {
+      const row = jsonData[i];
+      if (!row) continue;
+
+      if (!row[1] && !row[2] && !row[3]) continue; // Skip if B, C, D are all empty
+
+      const question = [row[1], row[2], row[3]]
+        .filter(part => part) // Remove empty/undefined parts
+        .join(' ')
+        .trim();
+
+      try {
+        const response = await fetch('http://localhost:5000/classify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('Classification result:', data);
+
+        if (!data.success) {
+          throw new Error(data.error || 'Classification failed');
+        }
+
+        results.push({
+          question,
+          classification: data.classification
+        });
+
+      } catch (error) {
+        console.error('Error processing row:', error);
+        results.push({
+          question,
+          classification: 'Error'
+        });
+      }
+    }
+
+    // Extract and format classifications for appending to sheet
+    const classificationsToAppend = results.map(result => [result.classification]);
+
+    // Append classifications to sheet
+    await TwiceToSheet(classificationsToAppend, sheetName);
+
+
+    return results;
+
+  } catch (error) {
+    console.error('Error processing file:', error.message);
+    return { error: error.message };
+  }
+}
+
+
+// Example usage:
+// await exportSheetToXLSX('Sheet1', 'your_folder_id');
+
+app.post('/export-sheet', async (req, res) => {
+  try {
+    const { sheetName } = req.body;
+    const exportFolderId = 'YOUR_EXPORT_FOLDER_ID'; // Replace with your folder ID
+    
+    const fileId = await exportSheetToXLSX(sheetName, exportFolderId);
+    
+    res.status(200).json({
+      success: true,
+      message: `Sheet "${sheetName}" exported successfully`,
+      fileId: fileId
+    });
+  } catch (error) {
+    console.error('Error exporting sheet:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to export sheet',
+      error: error.message
+    });
+  }
+});
 
 const PORT = 3000; 
 
