@@ -16,6 +16,7 @@ dist
 dist-ssr
 *.local
 project_backup
+executable.sh
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

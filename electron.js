@@ -27,8 +27,8 @@ function startServers() {
     const pythonPath = isDev ? "app.py" : path.join(__dirname, "app.py");
     const envPath = isDev ? ".env" : path.join(__dirname, ".env");
     
-    // Windows: Open a new CMD window with full paths and env vars
-    exec(`start cmd.exe /K "set ELECTRON_IS_PACKAGED=true && set DOTENV_CONFIG_PATH=${envPath} && node "${serverPath}" && python "${pythonPath}""`, {
+    // Windows: Open a new CMD window and run both servers
+    exec(`start cmd.exe /K "set ELECTRON_IS_PACKAGED=true && set DOTENV_CONFIG_PATH=${envPath} && start /b node "${serverPath}" & start /b python "${pythonPath}" & pause"`, {
       cwd: __dirname,
       env: {
         ...process.env,
@@ -39,7 +39,7 @@ function startServers() {
     // Mac/Linux: Open a new terminal window
     const serverPath = isDev ? "server.js" : path.join(__dirname, "server.js");
     const pythonPath = isDev ? "app.py" : path.join(__dirname, "app.py");
-    exec(`osascript -e 'tell app "Terminal" to do script "node ${serverPath} && python ${pythonPath}"'`);
+    exec(`osascript -e 'tell app "Terminal" to do script "node ${serverPath} & python ${pythonPath}"'`);
   }
 }
 

@@ -78,11 +78,22 @@ async function listFilesInFolder(folderId) {
       return []; // Return an empty array to indicate no files
     }
 
-    // 🔹 Sort files numerically based on their name (Handles names like "page-001.png", "page-58.png")
+    // Sort files with more robust error handling
     files.sort((a, b) => {
-      const numA = parseInt(a.name.match(/Q(\d+)/)[1]);
-      const numB = parseInt(b.name.match(/Q(\d+)/)[1]);
-      return numA - numB;
+      try {
+        const matchA = a.name.match(/Q(\d+)/);
+        const matchB = b.name.match(/Q(\d+)/);
+        
+        // If either filename doesn't match the pattern, maintain original order
+        if (!matchA || !matchB) return 0;
+        
+        const numA = parseInt(matchA[1]);
+        const numB = parseInt(matchB[1]);
+        return numA - numB;
+      } catch (error) {
+        console.log(`Warning: Error sorting files ${a.name} and ${b.name}:`, error);
+        return 0; // Maintain original order if there's an error
+      }
     });
 
     console.log('Files in folder (sorted numerically):');
@@ -90,10 +101,10 @@ async function listFilesInFolder(folderId) {
       console.log(`- ${file.name} (ID: ${file.id})`);
     });
 
-    return files; // Return the sorted list of files
+    return files;
   } catch (error) {
     console.error('Error listing files in folder:', error.message);
-    throw error; // Re-throw the error to handle it in the calling function
+    throw error;
   }
 }
 
@@ -1031,7 +1042,7 @@ async function processExcelFile(filePath, sheetName) {
       if (!row[1] && !row[2] && !row[3]) continue; // Skip if B, C, D are all empty
 
       const question = [row[1], row[2], row[3]]
-        .filter(part => part) // Remove empty/undefined parts
+        .filter(part => part)
         .join(' ')
         .trim();
 
@@ -1053,26 +1064,38 @@ async function processExcelFile(filePath, sheetName) {
           throw new Error(data.error || 'Classification failed');
         }
 
+        // Split the classification into three parts
+        const [passageType, questionType, difficultyLevel] = data.classification
+          .split('|')
+          .map(part => part.trim().split(': ')[1]); // Get the value after ':'
+
         results.push({
           question,
-          classification: data.classification
+          passageType,
+          questionType,
+          difficultyLevel
         });
 
       } catch (error) {
         console.error('Error processing row:', error);
         results.push({
           question,
-          classification: 'Error'
+          passageType: 'Error',
+          questionType: 'Error',
+          difficultyLevel: 'Error'
         });
       }
     }
 
-    // Extract and format classifications for appending to sheet
-    const classificationsToAppend = results.map(result => [result.classification]);
+    // Format classifications as three separate columns
+    const classificationsToAppend = results.map(result => [
+      result.passageType,
+      result.questionType,
+      result.difficultyLevel
+    ]);
 
     // Append classifications to sheet
     await TwiceToSheet(classificationsToAppend, sheetName);
-
 
     return results;
 
