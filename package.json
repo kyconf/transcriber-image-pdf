@@ -3,24 +3,32 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "electron.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "server": "nodemon server.js"
+    "server": "nodemon server.js",
+    "python-server": "python app.py",
+    "electron-dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron-pack": "electron-builder --dir",
+    "electron-build": "electron-builder"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
+    "electron-is-dev": "^3.0.1",
+    "electron-window-state": "^5.0.3",
     "express": "^4.21.2",
-    "fs": "^0.0.1-security",
     "fs-extra": "^11.3.0",
+    "gm": "^1.25.0",
     "googleapis": "^144.0.0",
     "lucide-react": "^0.344.0",
     "openai": "^4.78.1",
     "path": "^0.12.7",
     "pdf-poppler": "^0.2.1",
+    "pdf2image": "^1.2.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.1.3",
@@ -32,6 +40,10 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.18",
+    "concurrently": "^8.2.2",
+    "electron": "^34.2.0",
+    "electron-builder": "^25.1.8",
+    "electron-packager": "^17.1.2",
     "eslint": "^9.9.1",
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
     "eslint-plugin-react-refresh": "^0.4.11",
@@ -41,9 +53,37 @@
     "tailwindcss": "^3.4.1",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.3.0",
-    "vite": "^5.4.2"
+    "vite": "^5.4.2",
+    "wait-on": "^7.0.1"
   },
-  "main": "eslint.config.js",
+  "build": {
+    "appId": "com.kyconf.transcriber",
+    "productName": "pdf-transcriber",
+    "asar": false,
+    "files": [
+      "build/**/*",
+      "electron.js",
+      "node_modules/**/*",
+      "server.js",
+      "app.py",
+      "credentials.json",
+      "drivecreds.json",
+      ".env"
+    ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "dist"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",

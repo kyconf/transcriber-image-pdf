@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import RWPage from './RWPage'; // Assuming RWPage is your main component
 
 import ImagePage from './ImagePage'; // Create an ImagePage component

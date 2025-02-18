@@ -16,12 +16,13 @@ function PDFPage() {
         },
       });
 
-      if (response.ok) {
-        const data = await response.json();
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
         alert(data.message);
       } else {
-        const errorData = await response.json();
-        alert(`Error: ${errorData.message || 'Error processing PDFs.'}`);
+        // Show the detailed error message if available
+        alert(`Error: ${data.details || data.message || 'Error processing PDFs.'}`);
       }
     } catch (error) {
       console.error('Error processing PDFs:', error);

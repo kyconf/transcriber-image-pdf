@@ -8,18 +8,16 @@ import pdfPoppler from "pdf-poppler";
 import dotenv from 'dotenv';
 import express, { response } from 'express';
 import cors from 'cors';
+
 if (process.env.NODE_ENV !== 'production') {
     dotenv.config();
   }
-
-
 
 const app = express();
 app.use(cors()); // Enables CORS for all origins
 app.use(express.json());
 app.set('view engine', 'ejs');
 app.use(express.urlencoded({ extended: true}));
-
 
 const range = 'Question!A1';
 
@@ -39,7 +37,6 @@ const auth = new google.auth.GoogleAuth({
 });
 const sheets = google.sheets({ version: 'v4', auth });
 
-
 const SERVICE2_ACCOUNT_FILE = 'drivecreds.json'; // Path to your service account key file
 
 const driveAuth = new google.auth.GoogleAuth({
@@ -50,6 +47,18 @@ const drive = google.drive({ version: 'v3', auth: driveAuth });
 
 const FOLDER_ID = '1rmujeT7-8jVtJlT7mnU9RmDnG-588MF9'; // Replace with your folder ID
 const FOLDER_PDF = '1dpViJ_Fw2Y_wrFXEKaWWolhn-WcGeg9T'; // Replace with your folder ID
+
+// Define a persistent output directory
+const isPackaged = process.env.ELECTRON_IS_PACKAGED === 'true';
+const OUTPUT_DIR = isPackaged
+  ? path.join(process.env.APPDATA || process.env.HOME, "pdf-transcriber", "converted_images")
+  : path.resolve("converted_images");
+
+// Create output directory if it doesn't exist
+if (!fs.existsSync(OUTPUT_DIR)) {
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  console.log(`✅ Created output directory at: ${OUTPUT_DIR}`);
+}
 
 async function listFilesInFolder(folderId) {
   try {
@@ -71,9 +80,9 @@ async function listFilesInFolder(folderId) {
 
     // 🔹 Sort files numerically based on their name (Handles names like "page-001.png", "page-58.png")
     files.sort((a, b) => {
-      const numA = parseInt(a.name.match(/\d+/)?.[0]) || 0; // Extract numbers from file names
-      const numB = parseInt(b.name.match(/\d+/)?.[0]) || 0;
-      return numA - numB; // Ascending order (1 → 58)
+      const numA = parseInt(a.name.match(/Q(\d+)/)[1]);
+      const numB = parseInt(b.name.match(/Q(\d+)/)[1]);
+      return numA - numB;
     });
 
     console.log('Files in folder (sorted numerically):');
@@ -88,12 +97,8 @@ async function listFilesInFolder(folderId) {
   }
 }
 
-
 // Call the function
 // listFilesInFolder(FOLDER_ID);
-
-
-
 
 async function fetchImageFromGoogleDrive(fileId) {
   try {
@@ -112,7 +117,6 @@ async function fetchImageFromGoogleDrive(fileId) {
     throw error; // Re-throw the error so it can be caught elsewhere
   }
 }
-
 
 let lastResponse = [];
 app.post('/chat', async (req, res) => {
@@ -137,8 +141,6 @@ The question and options can include bold, italics, and underlines using the fol
 - Underline: __text__ (use double underscores)
 
 Use \\n\\n for double line breaks and \\n for single line breaks. The output must strictly follow this format:
-
-
 
 {
   "response": "[question]\\n\\nA) [Option A]\\n**B) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n**Correct Answer: [Letter]**",
@@ -229,12 +231,18 @@ app.get('/chat/response', async (req, res) =>  { //gets the info
 let currentSheetRow = 0;
 let currentPageRow = 0;
 
-async function createDefaultSheet(spreadsheetId) {
+async function createDefaultSheet(spreadsheetId, sheetName) {
   try {
     const request = {
       spreadsheetId: spreadsheetId,
       resource: {
-        requests: [{ addSheet: {} }],
+        requests: [{
+          addSheet: {
+            properties: {
+              title: sheetName
+            }
+          }
+        }],
       },
     };
 
@@ -244,8 +252,29 @@ async function createDefaultSheet(spreadsheetId) {
     currentSheetRow = 0;
     currentPageRow = 0;
 
-    // Export the new sheet to XLSX
+    return newSheet.title;
+  } catch (error) {
+    console.error('❌ Error creating sheet:', error.message);
+    throw error;
+  }
+}
 
+async function createDefault(spreadsheetId) {
+  try {
+    const request = {
+      spreadsheetId: spreadsheetId,
+      resource: {
+        requests: [{ 
+          addSheet: {} 
+        }],
+      },
+    };
+
+    const response = await sheets.spreadsheets.batchUpdate(request);
+    const newSheet = response.data.replies[0].addSheet.properties;
+    console.log(`✅ New sheet created: ${newSheet.title}`);
+    currentSheetRow = 0;
+    currentPageRow = 0;
 
     return newSheet.title;
   } catch (error) {
@@ -330,35 +359,6 @@ async function TwiceToSheet(values, sheetName) {
   }
 }
 
-
-// // Function to interact with GPT
-// async function chatWithGPT(prompt) {
-//     try {
-//         const response = await openai.chat.completions.create({
-//             model: 'gpt-4o', // Replace with your desired GPT model
-//             messages: [
-//                 {
-//                     role: 'system',
-//                     content: (
-//                         "You are an AI that generates SAT-style multiple-choice questions strictly related to the topic provided by the user. " +
-//                         "You are to encapsulate the question with HTML and make it <h2> </h2> " +
-//                         "If I provide you with a passage and/or a question, you are to give me a question of the same difficulty that assesses the same skill (i.e., if the original question tests vocabulary, the question you output must also test vocabulary). " +
-//                         "The question must align with the topic and be in this format: " +
-//                         "<h2> Question: [question] </h2> " +
-//                         "A) [choice A] B) [choice B] C) [choice C] D) [choice D] " +
-//                         "Correct Answer: [correct choice letter]."
-//                     ),
-//                 },
-//                 { role: 'user', content: prompt },
-//             ],
-//         });
-//         return response.choices[0].message.content.trim();
-//     } catch (error) {
-//         console.error('Error interacting with GPT:', error);
-//         return null;
-//     }
-// }
-
 // Function to parse GPT's response
 function parseGPTResponse(response) {
     const questionStart = response.indexOf('Question:') + 'Question:'.length;
@@ -419,9 +419,6 @@ rl.on('line', async (userInput) => {
     });
 });
 
-
-
-
 ////////////////////////////////////////////////////////////////////
 // Transcriber area
 
@@ -430,12 +427,12 @@ rl.on('line', async (userInput) => {
 //   return imageBuffer.toString("base64"); // Convert binary to Base64 string
 // }
 
-
-
 app.post('/transcribe', async (req, res) => {
   try {
     const files = await listFilesInFolder(FOLDER_ID);
-    const newSheet = await createDefaultSheet(SPREADSHEET_ID);
+    files.sort((a, b) => a.name.localeCompare(b.name));
+    console.log(files);
+    const newSheet = await createDefault(SPREADSHEET_ID);
 
     if (files.length === 0) {
       console.log('No files found in the folder.');
@@ -448,7 +445,7 @@ app.post('/transcribe', async (req, res) => {
     console.log(`Found ${files.length} file(s) in the folder.`);
 
     const responses = []; // To store results for all files
-    let count = 0;
+  
     for (const file of files) {
 
       counting = 0;
@@ -516,14 +513,14 @@ app.post('/transcribe', async (req, res) => {
           }
 
           console.log("Parsed Message:", newMessage);
-          count++;
-          const valuesToAppend = [[count, parseMessage.passage, parseMessage.question, parseMessage.correct_answer]];
+       
+          const valuesToAppend = [[parseMessage.passage, parseMessage.question, parseMessage.correct_answer]];
 
           await appendToSheet(valuesToAppend, newSheet); // Append to Google Sheets
 
           console.log(`Response for ${file.name} appended to Google Sheets!`);
 
-          console.log(`Cell: ${count}`);
+    
           responses.push({
             file: file.name,
             response: parseMessage,
@@ -544,6 +541,26 @@ app.post('/transcribe', async (req, res) => {
       }
     }
 
+     
+  // Generate unique filename
+  const uniqueFileName = generateUniqueFileName(newSheet);
+  
+  await exportSheetToXLSX(SPREADSHEET_ID, newSheet, uniqueFileName);
+  await uploadXLSXToDrive(uniqueFileName, EXPORT_FOLDER_ID);
+  
+  await processExcelFile(uniqueFileName, newSheet)
+    .then(result => console.log('Final JSON result:', JSON.stringify(result, null, 2)))
+    .catch(error => console.error('Processing failed:', error.message));
+
+  // Optionally, clean up the local file after processing
+  try {
+    fs.unlinkSync(uniqueFileName);
+    console.log(`✅ Cleaned up temporary file: ${uniqueFileName}`);
+  } catch (error) {
+    console.error(`❌ Error cleaning up file: ${error.message}`);
+  }
+
+
     return res.status(200).json({
       success: true,
       message: 'Processed all files in the folder.',
@@ -562,17 +579,6 @@ app.post('/transcribe', async (req, res) => {
 ////////////////////////////////////////////////////////////////////
 // PDF AREA
 ////////////////////////////////////////////////////////////////////
-
-const PDF_FILE_PATH = path.resolve("zample.pdf");
-const OUTPUT_DIR = path.resolve("converted_images");
-
-// Check if the PDF exists
-if (!fs.existsSync(PDF_FILE_PATH)) {
-  console.error("❌ PDF file not found at:", PDF_FILE_PATH);
-  process.exit(1);
-} else {
-  console.log("✅ PDF file exists at:", PDF_FILE_PATH);
-}
 
 async function clearProcessingQueue() {
   try {
@@ -596,7 +602,6 @@ async function clearProcessingQueue() {
     console.error("❌ Error clearing processing queue:", error.message);
   }
 }
-
 
 // Convert PDF to Images
 async function convertPdfToImages(pdfPath, outputDir) {
@@ -664,16 +669,20 @@ async function downloadPdfFromDrive(fileId) {
       { responseType: 'stream' }
     );
 
+    // Use the OUTPUT_DIR for saving files
     const filePath = path.join(OUTPUT_DIR, `${fileId}.pdf`);
     const dest = fs.createWriteStream(filePath);
     response.data.pipe(dest);
 
     return new Promise((resolve, reject) => {
-      dest.on('finish', () => resolve(filePath));
+      dest.on('finish', () => {
+        console.log(`✅ Downloaded PDF to: ${filePath}`);
+        resolve(filePath);
+      });
       dest.on('error', reject);
     });
   } catch (error) {
-    console.error('Error downloading PDF from Google Drive:', error.message);
+    console.error('❌ Error downloading PDF from Google Drive:', error.message);
     throw error;
   }
 }
@@ -707,10 +716,11 @@ async function processPdfAndUpload() {
     for (const pdfFile of pdfFiles) {
       console.log(`Processing PDF file: ${pdfFile.name} (${pdfFile.id})`);
 
-      const newSheetName = await createDefaultSheet(SPREADSHEET_ID);
+      // Get the filename without the .pdf extension
+      const sheetName = pdfFile.name.replace('.pdf', '');
+      const newSheetName = await createDefaultSheet(SPREADSHEET_ID, sheetName);
 
       const pdfFilePath = await downloadPdfFromDrive(pdfFile.id);
-
       const images = await convertPdfToImages(pdfFilePath, OUTPUT_DIR);
 
       for (const image of images) {
@@ -724,7 +734,8 @@ async function processPdfAndUpload() {
 
     await listFilesInFolder(FOLDER_PDF);
   } catch (error) {
-    console.error("❌ Error processing PDF:", error);
+    // Throw the error to be caught by the endpoint
+    throw error;
   }
 }
 
@@ -828,7 +839,6 @@ async function transcribeImages(images, sheetName) {
 // Example usage
 const filePath = 'output.xlsx'; // Replace with the actual file path
 
-
 // Function to get the file ID from Google Drive
 async function getFileIdFromDrive(fileName) {
   try {
@@ -857,11 +867,10 @@ app.post('/process-pdf', async (req, res) => {
       message: 'All PDFs have been processed successfully.',
     });
   } catch (error) {
-    console.error('Error processing PDFs:', error.message);
+    console.error('Error processing PDFs:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to process PDFs.',
-      error: error.message,
+      message: error.message || 'Failed to process PDFs.',
     });
   }
 });
@@ -946,8 +955,6 @@ async function exportSheetToXLSX(spreadsheetId, sheetName, destinationPath) {
       console.error('❌ Error exporting sheet to XLSX:', error.message);
   }
 }
-
-
 
 // Function to upload a file (XLSX, PNG, or any type) to Google Drive
 async function uploadXLSXToDrive(filePath, folderId) {
@@ -1075,7 +1082,6 @@ async function processExcelFile(filePath, sheetName) {
   }
 }
 
-
 // Example usage:
 // await exportSheetToXLSX('Sheet1', 'your_folder_id');
 
@@ -1101,10 +1107,17 @@ app.post('/export-sheet', async (req, res) => {
   }
 });
 
-const PORT = 3000; 
+const PORT = process.env.PORT || 3000; 
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+}).on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.log(`Port ${PORT} is busy, trying ${PORT + 1}...`);
+    app.listen(PORT + 1);
+  } else {
+    console.error('Server error:', err);
+  }
 });
 
 // Add this function to generate a unique filename

@@ -15,7 +15,7 @@ converted_images
 dist
 dist-ssr
 *.local
-
+project_backup
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
