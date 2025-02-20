@@ -9,16 +9,13 @@ function Sidebar({ loading }) {
   const navToImage = () => navigate('/image');
   const navToPDF = () => navigate('/pdf');
 
-  const googleDriveUrl = 'https://drive.google.com/drive/u/0/folders/18eZjKBriTAzfnRaXcl0vII8qyouDBfCI'; // Replace with your specific Drive URL
-  const googleSheetsUrl = 'https://docs.google.com/spreadsheets/d/1-GMTSImDqWFahWiWU44iV108cfAN6UZc_QxaT08sTlE/edit?usp=sharing'; // Replace with your specific Sheets URL
+  const googleDriveUrl = 'https://drive.google.com/drive/folders/1c3odLY__uNMp1-FkP7bSDtaZ90K08riA?usp=sharing'; // Replace with your specific Drive URL
+  const googleSheetsUrl = 'https://docs.google.com/spreadsheets/d/1wtaO0rdKW3WC1TBQBDRSUqQZ2t2yPsrHGnSeLJmr2pA/edit?usp=sharing'
 
   return (
     <div className="w-64 bg-gray-800 text-white h-full flex flex-col">
       <div className="p-4 text-lg font-bold">Navigation</div>
-      <button onClick={navToHome} disabled={loading} className="m-2 flex items-center gap-3 p-3 rounded-lg hover:bg-gray-700 transition-colors">
-        <MessageCircleQuestion size={20} />
-        Question
-      </button>
+
       <button onClick={navToImage} disabled={loading} className="m-2 flex items-center gap-3 p-3 rounded-lg hover:bg-gray-700 transition-colors">
         <FileImage size={20} />
         Image
@@ -28,10 +25,7 @@ function Sidebar({ loading }) {
         PDF
       </button>
 
-      <button onClick={navToPDF} disabled={loading} className="m-2 flex items-center gap-3 p-3 rounded-lg hover:bg-gray-700 transition-colors">
-        <Shapes size={20} />
-        Classifier
-      </button>
+
       <div className="mt-auto p-4 gap-2 flex flex-row">
         <button
           className="flex items-center gap-2 w-full p-3 bg-gray-600 rounded-lg hover:bg-gray-500 transition-colors"

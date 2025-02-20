@@ -3,9 +3,9 @@ import OpenAI from 'openai';
 import readline from 'readline';
 import path from "path";
 import * as XLSX from 'xlsx';
-import fs from 'fs';
 import pdfPoppler from "pdf-poppler";
 import dotenv from 'dotenv';
+import fs from 'fs';
 import express, { response } from 'express';
 import cors from 'cors';
 
@@ -25,10 +25,10 @@ const range = 'Question!A1';
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Google Sheets API setup
-const SERVICE_ACCOUNT_FILE = 'credentials.json'; // Path to your service account key file
-const SPREADSHEET_ID = '1-GMTSImDqWFahWiWU44iV108cfAN6UZc_QxaT08sTlE'; // Replace with your spreadsheet ID
+const SERVICE_ACCOUNT_FILE = 'sheets_credentials.json'; // Path to your service account key file
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID; // Replace with your spreadsheet ID
 
-const EXPORT_FOLDER_ID = '1Cc4KiS3UGI53K0BjJfNlY-ds94szvD3p'; // Replace with your folder ID
+const EXPORT_FOLDER_ID = process.env.EXPORT_FOLDER_ID;
 
 // Authenticate with Google Sheets
 const auth = new google.auth.GoogleAuth({   
@@ -37,7 +37,7 @@ const auth = new google.auth.GoogleAuth({
 });
 const sheets = google.sheets({ version: 'v4', auth });
 
-const SERVICE2_ACCOUNT_FILE = 'drivecreds.json'; // Path to your service account key file
+const SERVICE2_ACCOUNT_FILE = 'drive_credentials.json'; // Path to your service account key file
 
 const driveAuth = new google.auth.GoogleAuth({
   keyFile: SERVICE2_ACCOUNT_FILE,
@@ -45,8 +45,8 @@ const driveAuth = new google.auth.GoogleAuth({
 });
 const drive = google.drive({ version: 'v3', auth: driveAuth });
 
-const FOLDER_ID = '1rmujeT7-8jVtJlT7mnU9RmDnG-588MF9'; // Replace with your folder ID
-const FOLDER_PDF = '1dpViJ_Fw2Y_wrFXEKaWWolhn-WcGeg9T'; // Replace with your folder ID
+const FOLDER_ID = process.env.FOLDER_ID;
+const FOLDER_PDF = process.env.FOLDER_PDF;
 
 // Define a persistent output directory
 const isPackaged = process.env.ELECTRON_IS_PACKAGED === 'true';
@@ -386,49 +386,10 @@ function parseGPTResponse(response) {
     return { question, choicesAndAnswer, correctAnswer };
 }
 
-// Readline interface for user input
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-});
 
-// Main script logic
-console.log("Welcome to the GPT-Sheets bot! Type 'exit' to quit.");
 
-rl.on('line', async (userInput) => {
-    if (userInput.toLowerCase() === 'exit') {
-        console.log('Goodbye!');
-        rl.close();
-        return;
-    }
 
-    // Get GPT's response
-    const gptResponse = await chatWithGPT(userInput);
-    if (!gptResponse) {
-        console.log('Error getting response from GPT.');
-        return;
-    }
-    console.log(`GPT Response:\n${gptResponse}`);
 
-    // Parse the response
-    const { question, choicesAndAnswer, correctAnswer } = parseGPTResponse(gptResponse);
-
-    // Display parsed data
-    console.log("\nParsed Data:");
-    console.log(`Question: ${question}`);
-    console.log(`Choices and Answer: ${choicesAndAnswer}`);
-    console.log(`Correct Answer: ${correctAnswer}`);
-
-    // Ask user if they want to append the response to Google Sheets
-    rl.question("Do you want to save this response to the Google Sheet? (yes/no): ", async (confirm) => {
-        if (confirm.toLowerCase() === 'yes') {
-            await appendToSheet([[userInput, question, choicesAndAnswer, correctAnswer]]);
-            console.log("Response saved to Google Sheet!");
-        } else {
-            console.log("Response not saved.");
-        }
-    });
-});
 
 ////////////////////////////////////////////////////////////////////
 // Transcriber area
@@ -632,8 +593,8 @@ async function convertPdfToImages(pdfPath, outputDir) {
     await pdfPoppler.convert(pdfPath, options);
     let images = fs.readdirSync(outputDir).filter((file) => file.endsWith(".png"));
     
-    // Limit to a maximum of 55 images
-    images = images.slice(0, 55);
+   
+    images = images.slice(0, 54);
 
     console.log(`✅ Converted ${images.length} pages to images.`);
     return images.map((img) => path.join(outputDir, img));
@@ -770,7 +731,7 @@ async function transcribeImages(images, sheetName) {
                 type: "text",
                 text: `You are an assistant that transcribes passages and questions from a given image. You must be clear and concise. Do not give any introduction messages like 'Sure, here are the questions'. 
                   You are to return it in valid JSON format like the following. Carefully analyze the photo and encapsulate accordingly. Do not confuse "  with each other. There can be multiple in one question. If there are any line breaks, use 
-                  \\n for single line breaks and \\n\\n for double line breaks. If there are any italics, use *text*. If there are any quotes, use "text". STRICTLY FOLLOW: If there are any underlines, use _text_ 
+                  \\n for single line breaks and \\n\\n for double line breaks. If there is a graph, write %GRAPH% at the beginning of the question. If there are any italics, use *italics*. If there are any quotes, use "quote". STRICTLY FOLLOW: If there are any underlines, use {underline} 
                   {
                   "passage": "[passage]",
                   "question": "[question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",

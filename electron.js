@@ -3,6 +3,8 @@ import { app, BrowserWindow } from "electron";
 import path from "path";
 import { fileURLToPath } from "url";
 import isDev from "electron-is-dev";
+import dotenv from 'dotenv';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,6 +12,17 @@ const __dirname = path.dirname(__filename);
 let mainWindow;
 let nodeServer;
 let pythonServer;
+
+const envPath = path.join(process.cwd(), ".env");
+
+// Check if .env exists before loading
+if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    console.log("Loaded .env from:", envPath);
+} else {
+    console.warn(".env file not found in:", envPath);
+}
+
 
 function killProcesses() {
   if (nodeServer) {
@@ -27,8 +40,8 @@ function startServers() {
     const pythonPath = isDev ? "app.py" : path.join(__dirname, "app.py");
     const envPath = isDev ? ".env" : path.join(__dirname, ".env");
     
-    // Windows: Open a new CMD window and run both servers
-    exec(`start cmd.exe /K "set ELECTRON_IS_PACKAGED=true && set DOTENV_CONFIG_PATH=${envPath} && start /b node "${serverPath}" & start /b python "${pythonPath}" & pause"`, {
+    // Windows: Open a new CMD window and run both servers without pause
+    exec(`start cmd.exe /K "set ELECTRON_IS_PACKAGED=true && set DOTENV_CONFIG_PATH=${envPath} && start /b node "${serverPath}" & start /b python "${pythonPath}""`, {
       cwd: __dirname,
       env: {
         ...process.env,

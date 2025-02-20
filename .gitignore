@@ -7,8 +7,8 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-credentials.json
-drivecreds.json
+sheets_credentials.json
+drive_credentials.json
 .env
 node_modules
 converted_images

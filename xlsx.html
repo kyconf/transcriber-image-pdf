@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Question Classifier</title>
+    <!-- Add SheetJS (XLSX) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #result, #batchResult {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+            display: none;
+            overflow-x: auto;
+        }
+        .loading {
+            display: none;
+            margin: 10px 0;
+            color: #666;
+        }
+        .tab {
+            margin-top: 20px;
+        }
+        .tab button {
+            background-color: #f1f1f1;
+            color: black;
+            float: left;
+            border: 1px solid #ccc;
+            border-bottom: none;
+            margin-right: 2px;
+        }
+        .tab button.active {
+            background-color: #007bff;
+            color: white;
+        }
+        .tabcontent {
+            display: none;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-top: none;
+            clear: both;
+        }
+        .show {
+            display: block;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .file-upload {
+            margin: 20px 0;
+        }
+        #progressBar {
+            width: 100%;
+            background-color: #f0f0f0;
+            padding: 3px;
+            border-radius: 3px;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, .2);
+            display: none;
+        }
+        #progressBar div {
+            background-color: #007bff;
+            width: 0;
+            height: 20px;
+            border-radius: 3px;
+            transition: width 500ms ease;
+        }
+        .formatted-cell {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            padding: 0 !important;
+            margin: 0 !important;
+            text-indent: 0 !important;
+        }
+        
+        #resultsTable td {
+            padding: 8px;
+            vertical-align: top;
+        }
+
+        #resultsTable td:first-child {
+            padding: 8px !important;
+            text-indent: 0 !important;
+        }
+
+        .question-text {
+            margin: 0 !important;
+            padding: 0 !important;
+            text-indent: 0 !important;
+            display: block;
+        }
+
+        /* Add specific table styling */
+        #resultsTable {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        #resultsTable th, #resultsTable td {
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        .italic {
+            font-style: italic;
+        }
+        .underline {
+            text-decoration: underline;
+        }
+        .bold {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Question Classifier</h1>
+        
+        <div class="tab">
+            <button class="tablinks" onclick="openTab(event, 'singleQuestion')">Single Question</button>
+            <button class="tablinks" onclick="openTab(event, 'batchXLSX')">Batch XLSX</button>
+            <button class="tablinks" onclick="openTab(event, 'batchPDF')">Batch PDF</button>
+        </div>
+
+        <div id="singleQuestion" class="tabcontent show">
+            <div>
+                <label for="question">Enter your question:</label>
+                <textarea id="question" placeholder="Type or paste your question here..."></textarea>
+            </div>
+            <button onclick="classifyQuestion()">Classify</button>
+            <div class="loading" id="loading">Classifying...</div>
+            <div id="result"></div>
+        </div>
+
+        <div id="batchXLSX" class="tabcontent">
+            <div class="file-upload">
+                <label for="xlsxFile">Upload Excel file (.xlsx):</label>
+                <input type="file" id="xlsxFile" accept=".xlsx" />
+            </div>
+            <button onclick="processExcelFile()">Process File</button>
+            <div id="progressBar">
+                <div></div>
+            </div>
+            <div class="loading" id="batchLoading">Processing...</div>
+            <div id="batchResult"></div>
+            <div id="downloadButtons" style="margin-top: 20px; display: none;">
+                <button onclick="downloadAsXLSX()" style="margin-right: 10px;">Download as XLSX</button>
+                <button onclick="downloadAsPDF()">Download as PDF</button>
+            </div>
+        </div>
+
+        <div id="batchPDF" class="tabcontent">
+            <h3>Upload PDF File</h3>
+            <div class="input-group mb-3">
+                <input type="file" class="form-control" id="pdfInput" accept=".pdf">
+                <button class="btn btn-primary" onclick="handlePDFUpload()">Process PDF</button>
+            </div>
+            <div id="pdfLoading" style="display: none;">
+                <p>Processing PDF... This may take a few minutes.</p>
+                <div id="pdfProgressBar" class="progress-bar">
+                    <div style="width: 0%"></div>
+                </div>
+            </div>
+            <div id="pdfResult"></div>
+        </div>
+    </div>
+
+    <script>
+        // Google Sheets API setup
+        const SERVICE_ACCOUNT_FILE = 'credentials.json'; // Path to your service account key file
+        const SPREADSHEET_ID = '1-GMTSImDqWFahWiWU44iV108cfAN6UZc_QxaT08sTlE'; // Replace with your spreadsheet ID
+
+
+
+        // Authenticate with Google Sheets
+        const auth = new google.auth.GoogleAuth({   
+            keyFile: SERVICE_ACCOUNT_FILE,
+            scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+        });
+        const sheets = google.sheets({ version: 'v4', auth });
+
+        function openTab(evt, tabName) {
+            var tabcontent = document.getElementsByClassName("tabcontent");
+            for (var i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+
+            var tablinks = document.getElementsByClassName("tablinks");
+            for (var i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+        }
+
+        async function classifyQuestion() {
+            const question = document.getElementById('question').value;
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+            
+            if (!question.trim()) {
+                alert('Please enter a question');
+                return;
+            }
+
+            loading.style.display = 'block';
+            result.style.display = 'none';
+
+            // Add visible debug info
+            result.innerHTML = '<div>Debug: Starting request...</div>';
+
+            try {
+                result.innerHTML += '<div>Debug: Sending fetch request...</div>';
+                
+                const response = await fetch('http://localhost:5000/classify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ question })
+                });
+
+                result.innerHTML += `<div>Debug: Got response, status: ${response.status}</div>`;
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                result.innerHTML += `<div>Debug: Response data: ${JSON.stringify(data)}</div>`;
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Classification failed');
+                }
+
+                // Display the classification
+                result.innerHTML = `
+                    <div class="result-item">
+                        <strong>Classification:</strong>
+                        <div style="margin: 10px 0; white-space: pre-wrap;">${data.classification}</div>
+                    </div>
+                `;
+            } catch (error) {
+                result.innerHTML = `
+                    <div class="error">
+                        Error: ${error.message}
+                        <br>
+                        <small>Full error: ${error.toString()}</small>
+                    </div>
+                `;
+            } finally {
+                loading.style.display = 'none';
+                result.style.display = 'block';
+            }
+        }
+
+        async function processExcelFile() {
+            const fileInput = document.getElementById('xlsxFile');
+            const batchLoading = document.getElementById('batchLoading');
+            const batchResult = document.getElementById('batchResult');
+            const progressBar = document.getElementById('progressBar');
+            const progressBarFill = progressBar.querySelector('div');
+
+            if (!fileInput.files.length) {
+                alert('Please select an Excel file');
+                return;
+            }
+
+            batchLoading.style.display = 'block';
+            progressBar.style.display = 'block';
+            batchResult.style.display = 'none';
+
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onload = async function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {
+                        type: 'array',
+                        cellStyles: true,
+                        cellNF: true,
+                        cellFormula: true,
+                        cellHTML: true,
+                        raw: false
+                    });
+                    
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    
+                    // Convert to array of objects
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+                        header: 1,
+                        raw: false
+                    });
+
+
+                    const results = [];
+                    const totalRows = jsonData.length - 1;  // Exclude header row
+
+                    // Process each row
+                    for (let i = 1; i < jsonData.length; i++) {
+                        const row = jsonData[i];
+                        if (!row[questionCol]) continue;
+
+                        const question = row[questionCol];
+                        console.log('Processing question:', question); // Debug log
+
+                        try {
+                            const response = await fetch('http://localhost:5000/classify', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({ question })
+                            });
+
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+
+                            const data = await response.json();
+                            console.log('Classification result:', data); // Debug log
+
+                            if (!data.success) {
+                                throw new Error(data.error || 'Classification failed');
+                            }
+
+                            results.push({
+                                question,
+                                classification: data.classification
+                            });
+
+                            // Update progress
+                            const progress = ((i) / totalRows) * 100;
+                            progressBarFill.style.width = `${progress}%`;
+
+                        } catch (error) {
+                            console.error('Error processing row:', error);
+                            results.push({
+                                question,
+                                classification: 'Error'
+                            });
+                        }
+                    }
+
+                    // Display results
+                    displayResults(results);
+
+                } catch (error) {
+                    console.error('Error processing file:', error);
+                    batchResult.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+                    batchResult.style.display = 'block';
+                } finally {
+                    batchLoading.style.display = 'none';
+                    progressBar.style.display = 'none';
+                }
+            };
+
+            reader.onerror = function(error) {
+                console.error('Error reading file:', error);
+                batchResult.innerHTML = `<p style="color: red;">Error reading file</p>`;
+                batchResult.style.display = 'block';
+                batchLoading.style.display = 'none';
+                progressBar.style.display = 'none';
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
+        function displayResults(results) {
+            const batchResult = document.getElementById('batchResult');
+            const downloadButtons = document.getElementById('downloadButtons');
+            
+            // Count difficulties
+            const difficultyCounts = {
+                Easy: 0,
+                Medium: 0,
+                Hard: 0
+            };
+            
+            results.forEach(r => {
+                const difficulty = r.classification.split(' | ')[2]
+                    .replace('Question Difficulty: ', '')
+                    .trim();
+                if (difficultyCounts.hasOwnProperty(difficulty)) {
+                    difficultyCounts[difficulty]++;
+                }
+            });
+
+            // Split into modules (27 questions each)
+            const module1 = results.slice(0, 27);
+            const module2 = results.slice(27);
+            
+            const tableHTML = `
+                <div style="margin-bottom: 20px; font-size: 16px;">
+                    <strong>Question Difficulty Distribution:</strong>
+                    <div>Easy: ${difficultyCounts.Easy} questions</div>
+                    <div>Medium: ${difficultyCounts.Medium} questions</div>
+                    <div>Hard: ${difficultyCounts.Hard} questions</div>
+                </div>
+                <h3>Module 1</h3>
+                <table id="resultsTable">
+                    <thead>
+                        <tr>
+                            <th style="width: 70%">Question</th>
+                            <th style="width: 30%">Classification</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${module1.map(r => `
+                            <tr>
+                                <td class="formatted-cell">
+                                    <span class="question-text">${r.question}</span>
+                                </td>
+                                <td style="white-space: pre-wrap;">${r.classification
+                                    .replace('Passage Type: ', '')
+                                    .replace('Question Type: ', '')
+                                    .replace('Question Difficulty: ', '')
+                                }</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+
+                ${module2.length > 0 ? `
+                    <h3 style="margin-top: 30px;">Module 2</h3>
+                    <table id="resultsTable2">
+                        <thead>
+                            <tr>
+                                <th style="width: 70%">Question</th>
+                                <th style="width: 30%">Classification</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${module2.map(r => `
+                                <tr>
+                                    <td class="formatted-cell">
+                                        <span class="question-text">${r.question}</span>
+                                    </td>
+                                    <td style="white-space: pre-wrap;">${r.classification
+                                        .replace('Passage Type: ', '')
+                                        .replace('Question Type: ', '')
+                                        .replace('Question Difficulty: ', '')
+                                    }</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                ` : ''}
+            `;
+
+            batchResult.innerHTML = tableHTML;
+            batchResult.style.display = 'block';
+            downloadButtons.style.display = 'block';
+        }
+
+        function downloadAsXLSX() {
+            const table = document.getElementById('resultsTable');
+            if (!table) {
+                alert('No data to download');
+                return;
+            }
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.table_to_sheet(table, {raw: true});
+            
+            // Set column widths
+            ws['!cols'] = [
+                {wch: 60},  // Question column
+                {wch: 15},  // Passage Type
+                {wch: 15},  // Question Type
+                {wch: 15}   // Difficulty
+            ];
+
+            XLSX.utils.book_append_sheet(wb, ws, "Classifications");
+            XLSX.writeFile(wb, "question_classifications.xlsx");
+        }
+
+        function downloadAsPDF() {
+            // Make sure jsPDF is available
+            if (typeof window.jspdf === 'undefined') {
+                alert('PDF library not loaded. Please refresh the page.');
+                return;
+            }
+
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('l', 'pt', 'a4');
+
+            // Get the table
+            const table = document.getElementById('resultsTable');
+            if (!table) {
+                alert('No data to download');
+                return;
+            }
+
+            // Convert table to data array
+            const data = [];
+            const headers = [];
+            
+            // Get headers
+            const headerCells = table.querySelectorAll('thead th');
+            headerCells.forEach(cell => headers.push(cell.textContent.trim()));
+            data.push(headers);
+            
+            // Get data rows
+            const rows = table.querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                const rowData = [];
+                row.querySelectorAll('td').forEach(cell => {
+                    rowData.push(cell.textContent.trim());
+                });
+                data.push(rowData);
+            });
+
+            // Generate PDF
+            doc.autoTable({
+                head: [headers],
+                body: data.slice(1),
+                startY: 20,
+                margin: { top: 20 },
+                styles: {
+                    fontSize: 10,
+                    cellPadding: 3,
+                    lineWidth: 0.5,
+                    lineColor: [80, 80, 80]
+                },
+                columnStyles: {
+                    0: { cellWidth: 300 },
+                    1: { cellWidth: 80 },
+                    2: { cellWidth: 80 },
+                    3: { cellWidth: 80 }
+                },
+                headStyles: {
+                    fillColor: [66, 139, 202],
+                    textColor: 255,
+                    fontSize: 11,
+                    fontStyle: 'bold',
+                    halign: 'left'
+                },
+                bodyStyles: {
+                    halign: 'left'
+                },
+                theme: 'grid',
+                tableWidth: 'auto',
+                cellWidth: 'wrap',
+                pageBreak: 'auto',
+                rowPageBreak: 'avoid'
+            });
+
+            // Save the PDF
+            try {
+                doc.save('question_classifications.pdf');
+            } catch (error) {
+                console.error('Error generating PDF:', error);
+                alert('Error generating PDF. Please try again.');
+            }
+        }
+
+        async function handlePDFUpload() {
+            const fileInput = document.getElementById('pdfInput');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please select a PDF file first');
+                return;
+            }
+
+            // Show loading state
+            document.getElementById('pdfLoading').style.display = 'block';
+            document.getElementById('pdfResult').textContent = 'Processing...';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('http://localhost:5000/upload_pdf', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Display both the extracted text and classification
+                    document.getElementById('pdfResult').innerHTML = `
+                        <h4>Extracted Text:</h4>
+                        <pre style="white-space: pre-wrap;">${data.text}</pre>
+                        <h4>Classification:</h4>
+                        <p>${data.classification}</p>
+                    `;
+                    
+                    // Also update the main question input and result
+                    document.getElementById('question').value = data.text;
+                    document.getElementById('result').textContent = data.classification;
+                } else {
+                    document.getElementById('pdfResult').textContent = 'Error: ' + data.error;
+                }
+            } catch (error) {
+                console.error('Upload failed:', error);
+                document.getElementById('pdfResult').textContent = 'Upload failed: ' + error.message;
+            } finally {
+                document.getElementById('pdfLoading').style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html> 

@@ -1,5 +1,5 @@
 {
-  "name": "vite-react-typescript-starter",
+  "name": "kyconf-pdf-transcriber",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -66,19 +66,37 @@
       "node_modules/**/*",
       "server.js",
       "app.py",
-      "credentials.json",
-      "drivecreds.json",
-      ".env"
+      "sheets_credentials.json",
+      "drive_credentials.json",
+      ".env",
+      "xlsx.html",
+      "requirements.txt",
+      "macinstall.sh",
+      "wininstall.ps1",
+      "project_backup/**"
     ],
     "directories": {
       "buildResources": "assets",
       "output": "dist"
     },
+    "extraResources": [
+      {
+        "from": "../.env",
+        "to": ".env"
+      }
+    ],
     "mac": {
       "target": "dmg"
     },
     "win": {
       "target": "nsis"
+      
+    },
+    "nsis": { 
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": "always",
+    "runAfterFinish": true
     },
     "linux": {
       "target": "AppImage"
