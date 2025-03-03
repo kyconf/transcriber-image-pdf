@@ -60,6 +60,29 @@ if (!fs.existsSync(OUTPUT_DIR)) {
   console.log(`✅ Created output directory at: ${OUTPUT_DIR}`);
 }
 
+// Clear converted_images folder on startup
+function clearConvertedImagesFolder() {
+  console.log("🧹 Cleaning up converted_images folder on startup...");
+  try {
+    if (fs.existsSync(OUTPUT_DIR)) {
+      const files = fs.readdirSync(OUTPUT_DIR);
+      for (const file of files) {
+        fs.unlinkSync(path.join(OUTPUT_DIR, file));
+        console.log(`✅ Deleted: ${file}`);
+      }
+      console.log("✨ Converted images folder cleaned successfully");
+    } else {
+      console.log("📂 No converted_images folder found, creating one...");
+      fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+    }
+  } catch (error) {
+    console.error("❌ Error cleaning converted_images folder:", error);
+  }
+}
+
+// Add this right before the app.listen call
+clearConvertedImagesFolder();
+
 async function listFilesInFolder(folderId) {
   try {
     const response = await drive.files.list({
@@ -386,10 +409,11 @@ function parseGPTResponse(response) {
     return { question, choicesAndAnswer, correctAnswer };
 }
 
-
-
-
-
+// Add this helper function at the top
+function cleanJsonResponse(response) {
+  // Remove markdown code blocks and clean the response
+  return response.replace(/```json\s*|\s*```/g, '').trim();
+}
 
 ////////////////////////////////////////////////////////////////////
 // Transcriber area
@@ -485,13 +509,13 @@ app.post('/transcribe', async (req, res) => {
           }
 
           console.log("Parsed Message:", newMessage);
-       
+          
           const valuesToAppend = [[parseMessage.passage, parseMessage.question, parseMessage.correct_answer]];
 
           await appendToSheet(valuesToAppend, newSheet); // Append to Google Sheets
-
+          
           console.log(`Response for ${file.name} appended to Google Sheets!`);
-
+          
     
           responses.push({
             file: file.name,
@@ -534,7 +558,7 @@ app.post('/transcribe', async (req, res) => {
 
 
     return res.status(200).json({
-      success: true,
+      success: true,  
       message: 'Processed all files in the folder.',
       data: responses,
     });
@@ -545,7 +569,7 @@ app.post('/transcribe', async (req, res) => {
       message: 'Failed to process files from folder.',
       error: error.message,
     });
-  }
+  } 
 });
 
 ////////////////////////////////////////////////////////////////////
@@ -694,10 +718,10 @@ async function processPdfAndUpload() {
 
       const pdfFilePath = await downloadPdfFromDrive(pdfFile.id);
       const images = await convertPdfToImages(pdfFilePath, OUTPUT_DIR);
-
-      for (const image of images) {
-        await uploadFileToDrive(image);
-      }
+    
+    for (const image of images) {
+      await uploadFileToDrive(image);
+    }
 
       console.log(`✅ All images from ${pdfFile.name} uploaded to Google Drive.`);
 
@@ -731,7 +755,7 @@ async function transcribeImages(images, sheetName) {
                 type: "text",
                 text: `You are an assistant that transcribes passages and questions from a given image. You must be clear and concise. Do not give any introduction messages like 'Sure, here are the questions'. 
                   You are to return it in valid JSON format like the following. Carefully analyze the photo and encapsulate accordingly. Do not confuse "  with each other. There can be multiple in one question. If there are any line breaks, use 
-                  \\n for single line breaks and \\n\\n for double line breaks. If there is a graph, write %GRAPH% at the beginning of the question. If there are any italics, use *italics*. If there are any quotes, use "quote". STRICTLY FOLLOW: If there are any underlines, use {underline} 
+                  \\n for single line breaks and \\n\\n for double line breaks. If there is a graph, write %GRAPH% at the beginning of the question. If there are any italics, use *text*. If there are any quotes, use "text". STRICTLY FOLLOW: If there are any underlines, use {text} 
                   {
                   "passage": "[passage]",
                   "question": "[question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",
@@ -786,7 +810,7 @@ async function transcribeImages(images, sheetName) {
       });
     }
   }
- 
+
   // Generate unique filename
   const uniqueFileName = generateUniqueFileName(sheetName);
   
@@ -835,16 +859,16 @@ app.post('/process-pdf', async (req, res) => {
   try {
     await processPdfAndUpload();
     res.status(200).json({
-      success: true,
+    success: true,  
       message: 'All PDFs have been processed successfully.',
-    });
-  } catch (error) {
+  });
+} catch (error) {
     console.error('Error processing PDFs:', error);
     res.status(500).json({
-      success: false,
+    success: false,
       message: error.message || 'Failed to process PDFs.',
-    });
-  }
+  });
+} 
 });
 
 async function deleteFileByName(fileName) {
@@ -1091,6 +1115,225 @@ app.post('/export-sheet', async (req, res) => {
   }
 });
 
+// Add this endpoint to handle sheet downloads
+app.post('/download-sheet', async (req, res) => {
+  try {
+    const { sheetName } = req.body;
+    if (!sheetName) {
+      throw new Error('Sheet name is required');
+    }
+
+    // Generate unique filename for this download
+    const uniqueFileName = generateUniqueFileName(sheetName);
+    
+    // Export the specific sheet to XLSX
+    await exportSheetToXLSX(SPREADSHEET_ID, sheetName, uniqueFileName);
+    
+    // Upload to Drive and get file ID
+    const fileId = await uploadXLSXToDrive(uniqueFileName, EXPORT_FOLDER_ID);
+
+    // Clean up the temporary file
+    try {
+      fs.unlinkSync(uniqueFileName);
+      console.log(`✅ Cleaned up temporary file: ${uniqueFileName}`);
+    } catch (error) {
+      console.error(`❌ Error cleaning up file: ${error.message}`);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Sheet "${sheetName}" downloaded successfully`,
+      fileId: fileId
+    });
+  } catch (error) {
+    console.error('Error downloading sheet:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to download sheet',
+      error: error.message
+    });
+  }
+});
+
+// Add this endpoint to generate related questions
+app.post('/generate-questions', async (req, res) => {
+  try {
+    const { sheetName } = req.body;
+    if (!sheetName) {
+      throw new Error('Sheet name is required');
+    }
+
+    // Read the original sheet data
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${sheetName}!A:G`,
+    });
+
+    const rows = response.data.values || [];
+    let processedRows = 0;
+    
+    // Process each question and generate related ones until "None" is found in column E
+    for (const row of rows.slice(1)) { // Skip header row
+      const currentRow = rows.indexOf(row) + 1;
+      
+      // Stop if we reach row 55
+      if (currentRow >= 55) {
+        console.log('🛑 Reached row 55 - stopping generation');
+        break;
+      }
+
+      const passage = row[1] || '';
+      const question = row[2] || '';
+      const answer = row[3] || '';
+      const passageType = row[4] || '';
+      const questionType = row[5] || '';
+      const difficultyLevel = row[6] || '';
+      const columnE = row[4] || '';
+      
+      console.log(`\n🔄 Processing Sheet: ${sheetName} | Row: ${currentRow}`);
+      console.log(`📝 Passage: ${passage}`);
+      console.log(`📝 Question: ${question}`);
+      console.log(`📝 Question Type: ${questionType} | Difficulty: ${difficultyLevel}`);
+
+      // Stop if we encounter "None" in column E
+      if (columnE === "None") {
+        console.log('🛑 Found "None" in column E - stopped generation');
+        break;
+      }
+      
+      try {
+        const prompt = `Given these details of passage, question, answer, passage type, question type, and difficulty level:\\n\\n{
+          "passage": "${passage.replace(/[\n\r]/g, ' ')}",
+          "question": "${question.replace(/[\n\r]/g, ' ')}",
+          "answer": "${answer}",
+          "passageType": "${passageType}",
+          "questionType": "${questionType}",
+          "difficultyLevel": "${difficultyLevel}",
+          "task": "If given a digital SAT reading question, create a digital SAT reading question similar to the image attached. Follow these requirements:\\n\\n- Change the proper noun.\\n- Change the context, but ensure that the new context is historically and scientifically correct.\\n- When rephrasing or replacing words, ensure the replaced word is similar in meaning or of a more advanced level of difficulty. The reading comprehension level must remain consistent with the SAT reading level.\\n- The answer must remain the same as the letter provided in the image.
+           If there are any line breaks, use \\n for single line breaks and \\n\\n for double line breaks. If there is a graph, write %GRAPH% at the beginning of the question. If there are any italics, use *text*. If there are any quotes, use \"text\". If there are any underlines, use {text}."
+        }\\n\\nReturn in this JSON format:\\n
+        {
+          "passage": "[passage]",
+          "question": "[question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",
+          "correct_answer": "[Letter]"
+        }`;
+        
+
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4",
+          messages: [
+            {
+              role: "system",
+              content: "You are a helpful assistant that generates SAT-based reading and writing questions. You must be clear and concise. Return in valid JSON format"
+            },
+            { role: "user", content: prompt }
+          ],
+        });
+        
+
+
+        const generatedContent = completion.choices[0]?.message?.content;
+        console.log('Raw GPT Response:', generatedContent);
+
+        // Clean and parse the response
+        const cleanedContent = cleanJsonResponse(generatedContent);
+        console.log('Cleaned Response:', cleanedContent);
+
+        const generatedQuestion = JSON.parse(cleanedContent);
+        console.log('Parsed Question:', generatedQuestion);
+
+        // Append the generated question starting from column H
+        const targetRange = `${sheetName}!H${rows.indexOf(row) + 1}`;
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range: targetRange,
+          valueInputOption: 'RAW',
+          resource: {
+            values: [[generatedQuestion.passage, generatedQuestion.question, generatedQuestion.correct_answer]]
+          }
+        });
+        
+        processedRows++;
+        console.log(`✅ Generated question for Row ${currentRow} in ${sheetName}`);
+      } catch (error) {
+        console.error(`❌ Error generating question for Row ${currentRow} in ${sheetName}:`, error);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Generated ${processedRows} questions and appended to sheet: ${sheetName}`,
+      sheetName,
+      processedRows
+    });
+  } catch (error) {
+    console.error('Error generating questions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate questions',
+      error: error.message
+    });
+  }
+});
+
+// Add new endpoint to handle payload request
+app.post('/regenerate', async (req, res) => {
+  try {
+    const { passage, question, answer, passageType, questionType, difficultyLevel } = req.body;
+
+    if (!passage || !question || !answer || !passageType || !questionType || !difficultyLevel) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields in payload'
+      });
+    }
+
+    const prompt = `Given these details of passage, question, answer, passage type, question type, and difficulty level:\\n\\n{
+      "passage": "${passage.replace(/[\n\r]/g, ' ')}",
+      "question": "${question.replace(/[\n\r]/g, ' ')}",
+      "answer": "${answer}",
+      "passageType": "${passageType}",
+      "questionType": "${questionType}",
+      "difficultyLevel": "${difficultyLevel}",
+      "task": "If given a digital SAT reading question, create a digital SAT reading question similar to the image attached. Follow these requirements:\\n\\n- Change the proper noun.\\n- Change the context, but ensure that the new context is historically and scientifically correct.\\n- When rephrasing or replacing words, ensure the replaced word is similar in meaning or of a more advanced level of difficulty. The reading comprehension level must remain consistent with the SAT reading level.\\n- The answer must remain the same as the letter provided in the image.
+       If there are any line breaks, use \\n for single line breaks and \\n\\n for double line breaks. If there is a graph, write %GRAPH% at the beginning of the question. If there are any italics, use *text*. If there are any quotes, use \"text\". If there are any underlines, use {text}."
+    }\\n\\nReturn in this JSON format:\\n
+    {
+      "passage": "[passage]",
+      "question": "[question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",
+      "correct_answer": "[Letter]"
+    }`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        {
+          role: "system",
+          content: "You are a helpful assistant that generates SAT-based reading and writing questions. You must be clear and concise. Return in valid JSON format"
+        },
+        { role: "user", content: prompt }
+      ],
+    });
+
+    const generatedContent = completion.choices[0]?.message?.content;
+    const cleanedContent = cleanJsonResponse(generatedContent);
+    const generatedQuestion = JSON.parse(cleanedContent);
+
+    res.status(200).json({
+      success: true,
+      data: generatedQuestion
+    });
+
+  } catch (error) {
+    console.error('Error generating similar question:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate similar question',
+      error: error.message
+    });
+  }
+});
+
 const PORT = process.env.PORT || 3000; 
 
 app.listen(PORT, () => {
@@ -1109,3 +1352,33 @@ function generateUniqueFileName(sheetName) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   return `${sheetName}_${timestamp}.xlsx`;
 }
+
+// Add this function to get all sheet names
+async function getSheetNames() {
+  try {
+    const response = await sheets.spreadsheets.get({
+      spreadsheetId: SPREADSHEET_ID,
+      fields: 'sheets.properties.title'
+    });
+
+    const sheetNames = response.data.sheets.map(sheet => sheet.properties.title);
+    return sheetNames.reverse(); // Reverse the order
+  } catch (error) {
+    console.error('Error fetching sheet names:', error);
+    throw error;
+  }
+}
+
+// Add this endpoint
+app.get('/sheet-names', async (req, res) => {
+  try {
+    const sheetNames = await getSheetNames();
+    res.json({ success: true, sheetNames });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch sheet names',
+      error: error.message 
+    });
+  }
+});
