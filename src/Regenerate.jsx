@@ -204,9 +204,10 @@ function Regenerate() {
             </button>
             <button
               onClick={handleRegenerate}
-              className="button bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600 transition-colors"
+              disabled={loading}
+              className={`button bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600 transition-colors ${loading ? 'cursor-not-allowed' : ''}`}
             >
-              Submit
+              {loading ? 'Submitting...' : 'Submit'}
             </button>
           </div>
 
@@ -242,3 +243,4 @@ function Regenerate() {
 }
 
 export default Regenerate;
+

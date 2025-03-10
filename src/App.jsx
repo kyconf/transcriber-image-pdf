@@ -5,6 +5,7 @@ import ImagePage from './ImagePage'; // Create an ImagePage component
 import PDFPage from './PDFPage'; // Your existing PDFPage component
 import Sidebar from './Sidebar'; // Import the Sidebar component
 import Generate from './Generate';
+import Regenerate from './Regenerate';
 // This is the first page, aka the login page
 // to run app do npm run dev
 
@@ -19,6 +20,7 @@ function App() {
             <Route path="/image" element={<ImagePage />} />
             <Route path="/pdf" element={<PDFPage />} />
             <Route path="/generate" element={<Generate />} />
+            <Route path="/regenerate" element={<Regenerate />} />
           </Routes>
 
         </div>

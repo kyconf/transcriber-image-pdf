@@ -415,6 +415,36 @@ function cleanJsonResponse(response) {
   return response.replace(/```json\s*|\s*```/g, '').trim();
 }
 
+// Fix the convertFormattingToMarkup function
+function convertFormattingToMarkup(cell) {
+  if (!cell || typeof cell !== 'object') {
+    console.log('Invalid cell data:', cell);
+    return '';
+  }
+  
+  let text = cell.formattedValue || '';
+  if (!text) {
+    console.log('No formatted value found in cell');
+    return '';
+  }
+
+  const format = cell.effectiveFormat?.textFormat || {};
+  
+  // Handle line breaks first
+  text = text.replace(/\r?\n/g, '\\n');
+  
+  // Apply formatting in a specific order
+  if (format.bold) text = `**${text}**`;
+  if (format.italic) text = `*${text}*`;
+  if (format.underline) text = `_${text}_`;
+  
+  // Escape quotes
+  text = text.replace(/"/g, '\\"');
+  
+  console.log('Converted text:', text); // Debug log
+  return text;
+}
+
 ////////////////////////////////////////////////////////////////////
 // Transcriber area
 
@@ -499,12 +529,13 @@ app.post('/transcribe', async (req, res) => {
         });
 
         let newMessage = response.choices[0]?.message?.content || 'No message returned';
-        console.log(newMessage);
+        console.log("Raw GPT Response:", newMessage);
 
         let parseMessage;
         try {
           if (typeof newMessage === 'string') {
-            newMessage = newMessage.replace(/```json|```/g, "").trim();
+            // Clean the JSON response before parsing
+            newMessage = cleanJsonResponse(newMessage);
             parseMessage = JSON.parse(newMessage);
           }
 
@@ -776,12 +807,13 @@ async function transcribeImages(images, sheetName) {
       });
 
       let newMessage = response.choices[0]?.message?.content || 'No message returned';
-      console.log(newMessage);
+      console.log("Raw GPT Response:", newMessage);
 
       let parseMessage;
       try {
         if (typeof newMessage === 'string') {
-          newMessage = newMessage.replace(/```json|```/g, "").trim();
+          // Clean the JSON response before parsing
+          newMessage = cleanJsonResponse(newMessage);
           parseMessage = JSON.parse(newMessage);
         }
 
@@ -929,12 +961,12 @@ async function exportSheetToXLSX(spreadsheetId, sheetName, destinationPath) {
       const sheets = google.sheets({ version: 'v4', auth });
 
       // Fetch data from the specified sheet tab
-      const response = await sheets.spreadsheets.values.get({
+      const response = await sheets.spreadsheets.get({
           spreadsheetId,
-          range: `${sheetName}!A1:Z1000`, // Adjust range as needed
+          ranges: [`${sheetName}!A:G`],
       });
 
-      const rows = response.data.values;
+      const rows = response.data.sheets[0].data[0].rowData || [];
       if (!rows || rows.length === 0) {
           throw new Error(`No data found in sheet "${sheetName}".`);
       }
@@ -1163,87 +1195,102 @@ app.post('/generate-questions', async (req, res) => {
       throw new Error('Sheet name is required');
     }
 
-    // Read the original sheet data
-    const response = await sheets.spreadsheets.values.get({
+    const response = await sheets.spreadsheets.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${sheetName}!A:G`,
+      ranges: [`${sheetName}!A:G`],
+      fields: 'sheets.data.rowData.values(formattedValue)'
     });
 
-    const rows = response.data.values || [];
-    let processedRows = 0;
+    const rows = response.data.sheets[0].data[0].rowData || [];
+    let processedRows = 1;
     
-    // Process each question and generate related ones until "None" is found in column E
-    for (const row of rows.slice(1)) { // Skip header row
-      const currentRow = rows.indexOf(row) + 1;
+    for (const rowData of rows.slice(1)) {
+      const cells = rowData.values;
       
-      // Stop if we reach row 55
-      if (currentRow >= 55) {
-        console.log('🛑 Reached row 55 - stopping generation');
-        break;
+      // Get raw text without formatting
+      const passage = cells[1]?.formattedValue || '';
+      const question = cells[2]?.formattedValue || '';
+      const answer = cells[3]?.formattedValue || '';
+      const passageType = cells[4]?.formattedValue || '';
+      const questionType = cells[5]?.formattedValue || '';
+      const difficultyLevel = cells[6]?.formattedValue || '';
+
+      // Check for the word "Answer" and skip processing if found
+      if ([passage, question, answer, passageType, questionType, difficultyLevel].some(field => field.includes("Answer"))) {
+        console.log(`Skipping row ${processedRows + 1} due to presence of "Answer"`);
+        processedRows++;
+        continue; // Skip the current row
       }
 
-      const passage = row[1] || '';
-      const question = row[2] || '';
-      const answer = row[3] || '';
-      const passageType = row[4] || '';
-      const questionType = row[5] || '';
-      const difficultyLevel = row[6] || '';
-      const columnE = row[4] || '';
-      
-      console.log(`\n🔄 Processing Sheet: ${sheetName} | Row: ${currentRow}`);
-      console.log(`📝 Passage: ${passage}`);
-      console.log(`📝 Question: ${question}`);
-      console.log(`📝 Question Type: ${questionType} | Difficulty: ${difficultyLevel}`);
-
-      // Stop if we encounter "None" in column E
-      if (columnE === "None") {
-        console.log('🛑 Found "None" in column E - stopped generation');
-        break;
+      if (!passage || !question) {
+        console.log('Skipping row due to missing data');
+        continue;
       }
-      
+
       try {
-        const prompt = `Given these details of passage, question, answer, passage type, question type, and difficulty level:\\n\\n{
-          "passage": "${passage.replace(/[\n\r]/g, ' ')}",
-          "question": "${question.replace(/[\n\r]/g, ' ')}",
-          "answer": "${answer}",
-          "passageType": "${passageType}",
-          "questionType": "${questionType}",
-          "difficultyLevel": "${difficultyLevel}",
-          "task": "If given a digital SAT reading question, create a digital SAT reading question similar to the image attached. Follow these requirements:\\n\\n- Change the proper noun.\\n- Change the context, but ensure that the new context is historically and scientifically correct.\\n- When rephrasing or replacing words, ensure the replaced word is similar in meaning or of a more advanced level of difficulty. The reading comprehension level must remain consistent with the SAT reading level.\\n- The answer must remain the same as the letter provided in the image.
-           If there are any line breaks, use \\n for single line breaks and \\n\\n for double line breaks. If there is a graph, write %GRAPH% at the beginning of the question. If there are any italics, use *text*. If there are any quotes, use \"text\". If there are any underlines, use {text}."
-        }\\n\\nReturn in this JSON format:\\n
-        {
-          "passage": "[passage]",
-          "question": "[question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",
-          "correct_answer": "[Letter]"
-        }`;
-        
-
         const completion = await openai.chat.completions.create({
-          model: "gpt-4",
+          model: "gpt-4o",
           messages: [
             {
               role: "system",
-              content: "You are a helpful assistant that generates SAT-based reading and writing questions. You must be clear and concise. Return in valid JSON format"
+              content: `You are an expert SAT question generator. Your task is to create new, engaging questions that match the style and difficulty of the SAT.
+
+Key requirements for your responses:
+1. Use appropriate formatting to enhance readability and emphasis:
+   - Bold (**text**) ONLY when you think it is necessary.
+   - Italics (*text*) ONLY for titles of works, foreign words, or emphasis
+   - Underline (_text_) ONLY when the question asks for it, e.g. "What is the purpose of the underlined section?"
+   - Quotes ("text") for direct quotations
+2. Use proper line breaks:
+   - \\n for single line breaks
+   - \\n\\n for paragraph breaks
+3. If the question involves a graph or visual element, start with %GRAPH%
+4. Maintain consistent difficulty level and question type
+5. Ensure historical/scientific accuracy
+6. Create clear, unambiguous answer choices
+7. A question cannot be formatted twice, e.g. _**text**_ is invalid.
+
+Return ONLY in this JSON format:
+{
+  "passage": "[formatted passage]",
+  "question": "[formatted question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",
+  "correct_answer": "[Letter]"
+}`
             },
-            { role: "user", content: prompt }
+            {
+              role: "user",
+              content: `Create a new SAT question based on these parameters:
+{
+  "original_passage": "${passage}",
+  "original_question": "${question}",
+  "required_answer": "${answer}",
+  "passage_type": "${passageType}",
+  "question_type": "${questionType}",
+  "difficulty": "${difficultyLevel}"
+}
+
+Requirements:
+1. Create a completely new passage and question that tests the same skills
+2. Match the difficulty level and question type
+3. The correct answer must be "${answer}"
+4. Apply appropriate formatting (bold, italic, underline) where it enhances understanding
+5. Use different proper nouns and context while maintaining the same concept`
+            }
           ],
         });
-        
-
 
         const generatedContent = completion.choices[0]?.message?.content;
         console.log('Raw GPT Response:', generatedContent);
 
         // Clean and parse the response
         const cleanedContent = cleanJsonResponse(generatedContent);
-        console.log('Cleaned Response:', cleanedContent);
+        // console.log('Cleaned Response:', cleanedContent);
 
         const generatedQuestion = JSON.parse(cleanedContent);
         console.log('Parsed Question:', generatedQuestion);
 
         // Append the generated question starting from column H
-        const targetRange = `${sheetName}!H${rows.indexOf(row) + 1}`;
+        const targetRange = `${sheetName}!H${processedRows + 1}`;
         await sheets.spreadsheets.values.update({
           spreadsheetId: SPREADSHEET_ID,
           range: targetRange,
@@ -1254,9 +1301,9 @@ app.post('/generate-questions', async (req, res) => {
         });
         
         processedRows++;
-        console.log(`✅ Generated question for Row ${currentRow} in ${sheetName}`);
+        console.log(`✅ Generated question for Row ${processedRows} in ${sheetName}`);
       } catch (error) {
-        console.error(`❌ Error generating question for Row ${currentRow} in ${sheetName}:`, error);
+        console.error(`❌ Error generating question for Row ${processedRows + 1} in ${sheetName}:`, error);
       }
     }
 
@@ -1279,48 +1326,93 @@ app.post('/generate-questions', async (req, res) => {
 // Add new endpoint to handle payload request
 app.post('/regenerate', async (req, res) => {
   try {
-    const { passage, question, answer, passageType, questionType, difficultyLevel } = req.body;
-
-    if (!passage || !question || !answer || !passageType || !questionType || !difficultyLevel) {
+    const { sheetName, row } = req.body;
+    if (!sheetName || !row) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields in payload'
+        message: 'Sheet name and row number are required'
       });
     }
 
-    const prompt = `Given these details of passage, question, answer, passage type, question type, and difficulty level:\\n\\n{
-      "passage": "${passage.replace(/[\n\r]/g, ' ')}",
-      "question": "${question.replace(/[\n\r]/g, ' ')}",
-      "answer": "${answer}",
-      "passageType": "${passageType}",
-      "questionType": "${questionType}",
-      "difficultyLevel": "${difficultyLevel}",
-      "task": "If given a digital SAT reading question, create a digital SAT reading question similar to the image attached. Follow these requirements:\\n\\n- Change the proper noun.\\n- Change the context, but ensure that the new context is historically and scientifically correct.\\n- When rephrasing or replacing words, ensure the replaced word is similar in meaning or of a more advanced level of difficulty. The reading comprehension level must remain consistent with the SAT reading level.\\n- The answer must remain the same as the letter provided in the image.
-       If there are any line breaks, use \\n for single line breaks and \\n\\n for double line breaks. If there is a graph, write %GRAPH% at the beginning of the question. If there are any italics, use *text*. If there are any quotes, use \"text\". If there are any underlines, use {text}."
-    }\\n\\nReturn in this JSON format:\\n
-    {
-      "passage": "[passage]",
-      "question": "[question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",
-      "correct_answer": "[Letter]"
-    }`;
+    // Read the original sheet data
+    const response = await sheets.spreadsheets.get({
+      spreadsheetId: SPREADSHEET_ID,
+      ranges: [`${sheetName}!B${row}:G${row}`],
+      fields: 'sheets.data.rowData.values(effectiveFormat.textFormat,formattedValue)'
+    });
+
+    // Extract values and formatting
+    const rowData = response.data.sheets[0].data[0].rowData[0];
+    const cells = rowData.values;
+
+    // Get formatted text
+    const passage = convertFormattingToMarkup(cells[0]);
+    const question = convertFormattingToMarkup(cells[1]);
+    const answer = cells[2]?.formattedValue || '';
+    const passageType = convertFormattingToMarkup(cells[3]);
+    const questionType = convertFormattingToMarkup(cells[4]);
+    const difficultyLevel = convertFormattingToMarkup(cells[5]);
+
+    console.log("Formatted values", passage, question, answer, passageType, questionType, difficultyLevel);
+    console.log(`\n🔄 Processing Sheet: ${sheetName} | Row: ${row}`);
+
+    const prompt = `You are an expert SAT question generator. Your task is to create new, engaging questions that match the style and difficulty of the SAT.
+
+Key requirements for your responses:
+1. Use appropriate formatting to enhance readability and emphasis:
+   - Bold (**text**) ONLY when you think it is necessary.
+   - Italics (*text*) ONLY for titles of works, foreign words, or emphasis
+   - Underline (_text_) ONLY when the question asks for it, e.g. "What is the purpose of the underlined section?"
+   - Quotes ("text") for direct quotations
+2. Use proper line breaks:
+   - \\n for single line breaks
+   - \\n\\n for paragraph breaks
+3. If the question involves a graph or visual element, start with %GRAPH%
+4. Maintain consistent difficulty level and question type
+5. Ensure historical/scientific accuracy
+6. Create clear, unambiguous answer choices
+7. A question cannot be formatted twice, e.g. _**text**_ is invalid.
+
+Return ONLY in this JSON format:
+{
+  "passage": "[formatted passage]",
+  "question": "[formatted question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",
+  "correct_answer": "[Letter]"
+}`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4o",
       messages: [
         {
           role: "system",
-          content: "You are a helpful assistant that generates SAT-based reading and writing questions. You must be clear and concise. Return in valid JSON format"
+          content: "You are a helpful assistant that generates SAT-based reading and writing questions. You must be clear and concise. For fill-in-the-blank questions, always use exactly three underscores (___). Return in valid JSON format"
         },
         { role: "user", content: prompt }
       ],
     });
 
     const generatedContent = completion.choices[0]?.message?.content;
+
+    // Clean and parse the response
     const cleanedContent = cleanJsonResponse(generatedContent);
     const generatedQuestion = JSON.parse(cleanedContent);
 
+    // Append the generated question starting from column H
+    const targetRange = `${sheetName}!H${row}`;
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: targetRange,
+      valueInputOption: 'RAW',
+      resource: {
+        values: [[generatedQuestion.passage, generatedQuestion.question, generatedQuestion.correct_answer]]
+      }
+    });
+
+    console.log(`✅ Generated question for Row ${row} in ${sheetName}`);
+
     res.status(200).json({
       success: true,
+      message: `Generated question for row ${row} in sheet: ${sheetName}`,
       data: generatedQuestion
     });
 

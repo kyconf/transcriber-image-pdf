@@ -9,6 +9,7 @@ function Sidebar({ loading }) {
   const navToImage = () => navigate('/image');
   const navToPDF = () => navigate('/pdf');
   const navToGenerate = () => navigate('/generate');
+  const navToRegenerate = () => navigate('/regenerate');
 
   const googleDriveUrl = 'https://drive.google.com/drive/folders/1c3odLY__uNMp1-FkP7bSDtaZ90K08riA?usp=sharing'; // Replace with your specific Drive URL
   const googleSheetsUrl = 'https://docs.google.com/spreadsheets/d/1wtaO0rdKW3WC1TBQBDRSUqQZ2t2yPsrHGnSeLJmr2pA/edit?usp=sharing'
@@ -29,6 +30,11 @@ function Sidebar({ loading }) {
             <button onClick={navToGenerate} disabled={loading} className="m-2 flex items-center gap-3 p-3 rounded-lg hover:bg-gray-700 transition-colors">
         <FileImage size={20} />
         Generate
+      </button>
+
+      <button onClick={navToRegenerate} disabled={loading} className="m-2 flex items-center gap-3 p-3 rounded-lg hover:bg-gray-700 transition-colors">
+        <MessageCircleQuestion size={20} /> 
+        Regenerate
       </button>
 
 
