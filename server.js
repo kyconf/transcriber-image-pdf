@@ -1221,7 +1221,7 @@ app.post('/download-sheet', async (req, res) => {
 // Add this endpoint to generate related questions
 app.post('/generate-questions', async (req, res) => {
   try {
-    const { sheetName } = req.body;
+    const { sheetName, generate_prompt } = req.body;
     if (!sheetName) {
       throw new Error('Sheet name is required');
     }
@@ -1246,7 +1246,6 @@ app.post('/generate-questions', async (req, res) => {
       const passageType = cells[4]?.formattedValue || '';
       const questionType = cells[5]?.formattedValue || '';
       const difficultyLevel = cells[6]?.formattedValue || '';
-
 
 
 
@@ -1283,11 +1282,11 @@ app.post('/generate-questions', async (req, res) => {
           messages: [
             {
               role: "system",
-              content: `You are an expert SAT question generator. Your task is to create new, engaging questions that match the style and difficulty of the SAT.\n\nKey requirements for your responses:\n1. Use appropriate formatting to enhance readability and emphasis:\n   - Bold (**text**) ONLY when you think it is necessary.\n   - Italics (*text*) ONLY for titles of works, foreign words, or emphasis\n   - Underline ({text}) ONLY when the question asks for it, e.g. "What is the purpose of the underlined section?"\n   - Quotes ("text") for direct quotations\n2. Use proper line breaks:\n   - \\n for single line breaks\n   - \\n\\n for paragraph breaks\n3. If the question involves a graph or visual element, start with %GRAPH%\n4. Maintain consistent difficulty level and question type\n5. Ensure historical/scientific accuracy\n6. Create clear, unambiguous answer choices\n7. A question cannot be formatted twice, e.g. _**text**_ is invalid.\n\nReturn ONLY in this JSON format:\n{\n  "passage": "[formatted passage]",\n  "question": "[formatted question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",\n  "correct_answer": "[Letter]"\n}`
+              content: `You are an expert SAT question generator. Your task is to create new, engaging questions that match the style and difficulty of the SAT.\n\nKey requirements for your responses:\n1. Use appropriate formatting to enhance readability and emphasis:\n   - Bold (**text**) ONLY when you think it is necessary.\n   - Italics (*text*) ONLY for titles of works, foreign words, or emphasis\n   - Underline ({text}) ONLY when the question asks for it, e.g. "What is the purpose of the underlined section?"\n   - Quotes ("text") for direct quotations\n2. Use proper line breaks:\n   - \\n for single line breaks\n   - \\n\\n for paragraph breaks\n3. If the question involves a graph or visual element, start with %GRAPH%\n4. Maintain consistent difficulty level and question type\n5. Ensure historical/scientific accuracy\n6. Create clear, unambiguous answer choices\n7. A question cannot be formatted twice, e.g. _**text**_ is invalid.\n\nReturn ONLY in this JSON format:\n{\n  "passage": "[formatted passage]",\n  "question": "[formatted question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",\n  "correct_answer": "[Letter]"\n}\n\nCreate a new SAT question based on these parameters:\n{\n  "original_passage": "${passage}",\n  "original_question": "${question}",\n  "required_answer": "${answer}",\n  "passage_type": "${passageType}",\n  "question_type": "${questionType}",\n  "difficulty": "${difficultyLevel}"\n}\n\nRequirements:\n1. Create a completely new passage and question that tests the same skills\n2. Match the difficulty level and question type\n3. The correct answer must be "${answer}"\n4. Apply appropriate formatting (bold, italic, underline) where it enhances understanding\n5. Use different proper nouns and context while maintaining the same concept.\n6. Do not forget the blanks _____ in the question or the formatting required by the question`
             },
             {
               role: "user",
-              content: `Create a new SAT question based on these parameters:\n{\n  "original_passage": "${passage}",\n  "original_question": "${question}",\n  "required_answer": "${answer}",\n  "passage_type": "${passageType}",\n  "question_type": "${questionType}",\n  "difficulty": "${difficultyLevel}"\n}\n\nRequirements:\n1. Create a completely new passage and question that tests the same skills\n2. Match the difficulty level and question type\n3. The correct answer must be "${answer}"\n4. Apply appropriate formatting (bold, italic, underline) where it enhances understanding\n5. Use different proper nouns and context while maintaining the same concept`
+              content: generate_prompt || "Generate a new question following the system instructions."
             }
           ],
         });
@@ -1339,7 +1338,7 @@ app.post('/generate-questions', async (req, res) => {
 // Add new endpoint to handle payload request
 app.post('/regenerate', async (req, res) => {
   try {
-    const { sheetName, row } = req.body;
+    const { sheetName, row, regenerate_prompt } = req.body;
     if (!sheetName || !row) {
       return res.status(400).json({
         success: false,
@@ -1374,11 +1373,11 @@ app.post('/regenerate', async (req, res) => {
       messages: [
         {
           role: "system",
-          content: `You are an expert SAT question generator. Your task is to create new, engaging questions that match the style and difficulty of the SAT.\n\nKey requirements for your responses:\n1. Use appropriate formatting to enhance readability and emphasis:\n   - Bold (**text**) ONLY when you think it is necessary.\n   - Italics (*text*) ONLY for titles of works, foreign words, or emphasis\n   - Underline ({text}) ONLY when the question asks for it, e.g. "What is the purpose of the underlined section?"\n   - Quotes ("text") for direct quotations\n2. Use proper line breaks:\n   - \\n for single line breaks\n   - \\n\\n for paragraph breaks\n3. If the question involves a graph or visual element, start with %GRAPH%\n4. Maintain consistent difficulty level and question type\n5. Ensure historical/scientific accuracy\n6. Create clear, unambiguous answer choices\n7. A question cannot be formatted twice, e.g. _**text**_ is invalid.\n\nReturn ONLY in this JSON format:\n{\n  "passage": "[formatted passage]",\n  "question": "[formatted question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",\n  "correct_answer": "[Letter]"\n}`
+          content: `You are an expert SAT question generator. Your task is to create new, engaging questions that match the style and difficulty of the SAT.\n\nKey requirements for your responses:\n1. Use appropriate formatting to enhance readability and emphasis:\n   - Bold (**text**) ONLY when you think it is necessary.\n   - Italics (*text*) ONLY for titles of works, foreign words, or emphasis\n   - Underline ({text}) ONLY when the question asks for it, e.g. "What is the purpose of the underlined section?"\n   - Quotes ("text") for direct quotations\n2. Use proper line breaks:\n   - \\n for single line breaks\n   - \\n\\n for paragraph breaks\n3. If the question involves a graph or visual element, start with %GRAPH%\n4. Maintain consistent difficulty level and question type\n5. Ensure historical/scientific accuracy\n6. Create clear, unambiguous answer choices\n7. A question cannot be formatted twice, e.g. _**text**_ is invalid.\n\nReturn ONLY in this JSON format:\n{\n  "passage": "[formatted passage]",\n  "question": "[formatted question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",\n  "correct_answer": "[Letter]"\n}\n\nCreate a new SAT question based on these parameters:\n{\n  "original_passage": "${passage}",\n  "original_question": "${question}",\n  "required_answer": "${answer}",\n  "passage_type": "${passageType}",\n  "question_type": "${questionType}",\n  "difficulty": "${difficultyLevel}"\n}\n\nRequirements:\n1. Create a completely new passage and question that tests the same skills\n2. Match the difficulty level and question type\n3. The correct answer must be "${answer}"\n4. Apply appropriate formatting (bold, italic, underline) where it enhances understanding\n5. Use different proper nouns and context while maintaining the same concept\n6. Do not forget the blanks _____ in the question or the formatting required by the question`
         },
         {
           role: "user",
-          content: `Create a new SAT question based on these parameters:\n{\n  "original_passage": "${passage}",\n  "original_question": "${question}",\n  "required_answer": "${answer}",\n  "passage_type": "${passageType}",\n  "question_type": "${questionType}",\n  "difficulty": "${difficultyLevel}"\n}\n\nRequirements:\n1. Create a completely new passage and question that tests the same skills\n2. Match the difficulty level and question type\n3. The correct answer must be "${answer}"\n4. Apply appropriate formatting (bold, italic, underline) where it enhances understanding\n5. Use different proper nouns and context while maintaining the same concept. The answer has to be ${answer}`
+          content: regenerate_prompt || "Generate a new question following the system instructions."
         }
       ],
     });

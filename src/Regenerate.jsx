@@ -13,6 +13,7 @@ function Regenerate() {
   const [showPopup, setShowPopup] = useState(false);
   const [inputFields, setInputFields] = useState(['']);
   const [validationError, setValidationError] = useState('');
+  const [regeneratePrompt, setRegeneratePrompt] = useState('');
 
   useEffect(() => {
     fetchSheetNames();
@@ -108,7 +109,8 @@ function Regenerate() {
           },
           body: JSON.stringify({
             sheetName: selectedSheet,
-            row: row
+            row: row,
+            regenerate_prompt: regeneratePrompt
           })
         });
 
@@ -165,6 +167,19 @@ function Regenerate() {
 
       <div className="flex-1 flex flex-col justify-center items-center p-4">
         <div className="w-full max-w-md mb-8">
+          <label className="block text-sm font-medium mb-2 text-center">
+            Select Sheet:
+          </label>
+          <div className="flex justify-center">
+            <ComboboxDemo 
+              sheetNames={sheetNames}
+              selectedSheet={selectedSheet}
+              onSheetSelect={(sheet) => setSelectedSheet(sheet)}
+            />
+          </div>
+        </div>
+
+        <div className="w-full max-w-md mb-8">
           <h3 className="text-xl font-medium mb-4 text-center text-blue-400">
             Enter rows to regenerate
           </h3>
@@ -202,26 +217,29 @@ function Regenerate() {
             >
               + Add Input
             </button>
-            <button
-              onClick={handleRegenerate}
-              disabled={loading}
-              className={`button bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600 transition-colors ${loading ? 'cursor-not-allowed' : ''}`}
-            >
-              {loading ? 'Submitting...' : 'Submit'}
-            </button>
-          </div>
-
-          <label className="block text-sm font-medium mb-2 text-center">
-            Select Sheet:
-          </label>
-          <div className="flex justify-center">
-            <ComboboxDemo 
-              sheetNames={sheetNames}
-              selectedSheet={selectedSheet}
-              onSheetSelect={(sheet) => setSelectedSheet(sheet)}
-            />
           </div>
         </div>
+        
+        <div className="w-full max-w-md mb-8">
+          <label className="block text-sm font-medium mb-2 text-center">
+            Regeneration Prompt:
+          </label>
+          <textarea
+            value={regeneratePrompt}
+            onChange={(e) => setRegeneratePrompt(e.target.value)}
+            className="w-full p-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-green-500 focus:outline-none"
+            rows={4}
+            placeholder="Enter your regeneration prompt here..."
+          />
+        </div>
+
+        <button
+          onClick={handleRegenerate}
+          disabled={loading}
+          className={`p-4 ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-500'} text-white rounded-lg text-xl hover:bg-green-600 transition-colors font-bold`}
+        >
+          {loading ? 'Regenerating...' : 'REGENERATE QUESTIONS'}
+        </button>
 
         {loading && (
           <div className="mt-4">

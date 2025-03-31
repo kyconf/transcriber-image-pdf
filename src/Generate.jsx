@@ -11,6 +11,7 @@ function Generate() {
   const [preview, setPreview] = useState(null);
   const [transcriptionComplete, setTranscriptionComplete] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
+  const [generatePrompt, setGeneratePrompt] = useState('');
 
   useEffect(() => {
     fetchSheetNames();
@@ -89,7 +90,8 @@ function Generate() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          sheetName: selectedSheet
+          sheetName: selectedSheet,
+          generate_prompt: generatePrompt
         })
       });
 
@@ -155,6 +157,19 @@ function Generate() {
               onSheetSelect={(sheet) => setSelectedSheet(sheet)}
             />
           </div>
+        </div>
+        
+        <div className="w-full max-w-md mb-8">
+          <label className="block text-sm font-medium mb-2 text-center">
+            Generation Prompt:
+          </label>
+          <textarea
+            value={generatePrompt}
+            onChange={(e) => setGeneratePrompt(e.target.value)}
+            className="w-full p-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-green-500 focus:outline-none"
+            rows={4}
+            placeholder="Enter your generation prompt here..."
+          />
         </div>
 
         <button
