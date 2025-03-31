@@ -75,6 +75,7 @@
       "electron.js",
       "server.js",
       "app.py",
+      "requirements.txt",
       "sheets_credentials.json",
       "drive_credentials.json",
       ".env",

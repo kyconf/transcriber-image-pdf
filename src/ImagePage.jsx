@@ -6,6 +6,7 @@ function ImagePage() {
   const [preview, setPreview] = useState(null);
   const [transcriptionComplete, setTranscriptionComplete] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
+  const [processedCount, setProcessedCount] = useState(0);
 
   const handleTranscribe = async () => {
     setLoading(true);
@@ -18,17 +19,21 @@ function ImagePage() {
         },
       });
 
+      const data = await response.json();
+
       if (response.ok) {
-        await fetchPreview();
+        setProcessedCount(data.details.processed_files.length);
         setTranscriptionComplete(true);
         setShowPopup(true);
+        console.log(`Processed ${data.details.processed_files.length} files successfully`);
       } else {
-        const errorData = await response.json();
-        alert(`Error: ${errorData.message || 'Error submitting data.'}`);
+        setShowPopup(false);
+        alert(`Could not process files: ${data.message}`);
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('An unexpected error occurred. Please try again.');
+      setShowPopup(false);
+      alert('Could not complete the process. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -61,29 +66,20 @@ function ImagePage() {
       )}
 
       <div className="flex-1 overflow-auto p-4">
-
-          <div className="p-4 space-y-4">
-
-  
-                <div className="flex justify-end">
-
-       
-                <div className="flex justify-start mt-4">
-                  
-                </div>
-              </div>
-              <h1 className="text-center">Always check Images before processing!</h1>
+        <div className="p-4 space-y-4">
+          <div className="flex justify-end">
+            <div className="flex justify-start mt-4">
+            </div>
           </div>
- 
-    
-  
+          <h1 className="text-center">Always check Images before processing!</h1>
+        </div>
       </div>
 
-      {showPopup && (
-        <div className="fixed bottom-4 right-4 bg-green-500 text-white p-4 rounded-lg shadow-lg flex items-center">
-          <span>Transcription completed successfully!</span>
-          <button onClick={closePopup} className="ml-4 text-white font-bold">
-            X
+      {showPopup && transcriptionComplete && (
+        <div className="fixed bottom-4 right-4 bg-green-500 text-white p-4 rounded-lg shadow-lg flex items-center space-x-4">
+          <span>✅ Successfully processed {processedCount} images!</span>
+          <button onClick={closePopup} className="text-white hover:text-gray-200 font-bold">
+            ×
           </button>
         </div>
       )}

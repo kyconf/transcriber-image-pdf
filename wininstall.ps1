@@ -9,16 +9,12 @@ function Command-Exists {
     return [bool](Get-Command $cmd -ErrorAction SilentlyContinue)
 }
 
-# Install Python 3.11.9 if not installed
-if (-Not (Command-Exists "python")) {
-    Write-Host "Python not found! Installing Python 3.11.9..." -ForegroundColor Yellow
-    Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe" -OutFile "python-installer.exe"
-    Start-Process -FilePath "python-installer.exe" -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1" -Wait
-    Remove-Item "python-installer.exe" -Force
-    Write-Host "Python 3.11.9 installed successfully!" -ForegroundColor Green
-} else {
-    Write-Host "Python is already installed: $(python --version)" -ForegroundColor Green
-}
+# Install Python 3.11.9
+Write-Host "Installing Python 3.11.9..." -ForegroundColor Yellow
+Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe" -OutFile "python-installer.exe"
+Start-Process -FilePath "python-installer.exe" -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1" -Wait
+Remove-Item "python-installer.exe" -Force
+Write-Host "Python 3.11.9 installed successfully!" -ForegroundColor Green
 
 # Upgrade pip
 Write-Host "Upgrading pip..." -ForegroundColor Cyan

@@ -98,35 +98,20 @@ async function listFilesInFolder(folderId) {
 
     if (files.length === 0) {
       console.log('No files found in the folder.');
-      return []; // Return an empty array to indicate no files
+      return [];
     }
 
-    // Sort files with more robust error handling
-    files.sort((a, b) => {
-      try {
-        const matchA = a.name.match(/Q(\d+)/);
-        const matchB = b.name.match(/Q(\d+)/);
-        
-        // If either filename doesn't match the pattern, maintain original order
-        if (!matchA || !matchB) return 0;
-        
-        const numA = parseInt(matchA[1]);
-        const numB = parseInt(matchB[1]);
-        return numA - numB;
-      } catch (error) {
-        console.log(`Warning: Error sorting files ${a.name} and ${b.name}:`, error);
-        return 0; // Maintain original order if there's an error
-      }
-    });
+    // Simple alphanumerical sort by filename
+    files.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: 'base'}));
 
-    console.log('Files in folder (sorted numerically):');
+    console.log('Files in folder (sorted alphanumerically):');
     files.forEach(file => {
       console.log(`- ${file.name} (ID: ${file.id})`);
     });
 
     return files;
   } catch (error) {
-    console.error('Error listing files in folder:', error.message);
+    console.error('Error listing files in folder:', error);
     throw error;
   }
 }
@@ -172,7 +157,7 @@ If I provide you with a passage and/or a question, generate a question of the sa
 The question and options can include bold, italics, and underlines using the following formatting:
 - Bold: **text** (use double asterisks)
 - Italics: *text* (use single asterisks)
-- Underline: __text__ (use double underscores)
+- Underline: {text} (use curly braces)
 
 Use \\n\\n for double line breaks and \\n for single line breaks. The output must strictly follow this format:
 
@@ -411,8 +396,39 @@ function parseGPTResponse(response) {
 
 // Add this helper function at the top
 function cleanJsonResponse(response) {
-  // Remove markdown code blocks and clean the response
-  return response.replace(/```json\s*|\s*```/g, '').trim();
+  try {
+    // First remove any markdown code blocks
+    let cleaned = response.replace(/```json\s*|\s*```/g, '').trim();
+    
+    // Try parsing it directly first
+    try {
+      return JSON.stringify(JSON.parse(cleaned));
+    } catch (firstError) {
+      // If direct parsing fails, try to fix common issues
+      
+      // Replace escaped quotes with temporary markers
+      cleaned = cleaned.replace(/\\"/g, '__QUOTE__');
+      
+      // Replace actual quotes with escaped quotes
+      cleaned = cleaned.replace(/(?<!\\)"/g, '\\"');
+      
+      // Handle line breaks within JSON string values
+      cleaned = cleaned.replace(/[\r\n]+/g, '\\n');
+      
+      // Restore escaped quotes
+      cleaned = cleaned.replace(/__QUOTE__/g, '\\"');
+      
+      // Wrap the entire string in quotes to make it valid JSON
+      cleaned = `"${cleaned}"`;
+      
+      // Parse and re-stringify to ensure valid JSON
+      const parsed = JSON.parse(cleaned);
+      return JSON.stringify(parsed);
+    }
+  } catch (error) {
+    console.error('Error parsing JSON after cleaning:', error);
+    throw error;
+  }
 }
 
 // Fix the convertFormattingToMarkup function
@@ -436,7 +452,7 @@ function convertFormattingToMarkup(cell) {
   // Apply formatting in a specific order
   if (format.bold) text = `**${text}**`;
   if (format.italic) text = `*${text}*`;
-  if (format.underline) text = `_${text}_`;
+  if (format.underline) text = `{${text}}`;
   
   // Escape quotes
   text = text.replace(/"/g, '\\"');
@@ -456,149 +472,155 @@ function convertFormattingToMarkup(cell) {
 app.post('/transcribe', async (req, res) => {
   try {
     const files = await listFilesInFolder(FOLDER_ID);
-    files.sort((a, b) => a.name.localeCompare(b.name));
     console.log(files);
-    const newSheet = await createDefault(SPREADSHEET_ID);
 
     if (files.length === 0) {
       console.log('No files found in the folder.');
       return res.status(404).json({
         success: false,
         message: 'No files found in the folder.',
+        details: {
+          total_files: 0,
+          processed_files: [],
+          failed_files: [],
+          sheet_name: null
+        }
       });
     }
 
+    // Find the first valid image file to use as sheet name
+    const firstImageFile = files.find(file => 
+      file.name.toLowerCase().endsWith('.png') || 
+      file.name.toLowerCase().endsWith('.jpg') || 
+      file.name.toLowerCase().endsWith('.jpeg')
+    );
+
+    if (!firstImageFile) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid image files found in the folder.',
+        details: {
+          total_files: files.length,
+          processed_files: [],
+          failed_files: files.map(f => ({ name: f.name, reason: 'Not a valid image file' })),
+          sheet_name: null
+        }
+      });
+    }
+
+    // Get filename without extension for sheet name
+    const sheetName = firstImageFile.name.split('.').slice(0, -1).join('.');
+    const newSheet = await createDefaultSheet(SPREADSHEET_ID, sheetName);
+
     console.log(`Found ${files.length} file(s) in the folder.`);
 
-    const responses = []; // To store results for all files
-  
-    for (const file of files) {
+    const processedFiles = []; // To track successfully processed files
+    const failedFiles = []; // To track failed files
+    const localImagePaths = []; // To store paths of downloaded images
 
-      counting = 0;
-      // Check if the file is a PDF
+    // Clear the converted_images directory first
+    if (fs.existsSync(OUTPUT_DIR)) {
+      fs.readdirSync(OUTPUT_DIR).forEach(file => {
+        fs.unlinkSync(path.join(OUTPUT_DIR, file));
+      });
+    } else {
+      fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+    }
+
+    // Download and save all valid images
+    for (const file of files) {
       if (file.name.toLowerCase().endsWith('.pdf')) {
-        console.log(`Processing PDF file: ${file.name}`);
-        // Add your PDF processing logic here
-        // For example, convert the PDF to images and then process those images
-        continue; // Skip to the next file after processing
+        console.log(`Skipping PDF file: ${file.name}`);
+        failedFiles.push({ name: file.name, reason: 'PDF files are not supported in image mode' });
+        continue;
       }
 
-      // Check if the file is an image
       if (!file.name.toLowerCase().endsWith('.png') && 
           !file.name.toLowerCase().endsWith('.jpg') && 
           !file.name.toLowerCase().endsWith('.jpeg')) {
         console.log(`Skipping unsupported file type: ${file.name}`);
-        continue; // Skip unsupported file types
+        failedFiles.push({ name: file.name, reason: 'Unsupported file type' });
+        continue;
       }
 
-      console.log(`Processing image file: ${file.name} (${file.id})`);
-
       try {
-        // Fetch the file content as Base64
-        const base64Image = await fetchImageFromGoogleDrive(file.id);
+        // Download image from Google Drive
+        const response = await drive.files.get(
+          {
+            fileId: file.id,
+            alt: 'media'
+          },
+          { responseType: 'stream' }
+        );
 
-        // Pass the Base64 image to OpenAI API
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: `You are an assistant that transcribes passages and questions from a given image. You must be clear and concise. Do not give any introduction messages like 'Sure, here are the questions'. 
-                    You are to return it in valid JSON format like the following. Carefully analyze the photo and encapsulate accordingly. Do not confuse "  with each other. There can be multiple in one question. If there are any line breaks, use 
-                    \\n for single line breaks and \\n\\n for double line breaks. If there are any italics, use *text*. If there are any quotes, use "text". STRICTLY FOLLOW: If there are any underlines, use _text_ 
-                    {
-                    "passage": "[passage]",
-                    "question": "[question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",
-                    "correct_answer": "[Letter]"
-                    }
-                  `,
-                },
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: `data:image/jpeg;base64,${base64Image}`,
-                  },
-                },
-              ],
-            },
-          ],
-          store: true,
+        const localPath = path.join(OUTPUT_DIR, file.name);
+        const writer = fs.createWriteStream(localPath);
+
+        // Save the image locally
+        await new Promise((resolve, reject) => {
+          response.data
+            .pipe(writer)
+            .on('finish', resolve)
+            .on('error', reject);
         });
 
-        let newMessage = response.choices[0]?.message?.content || 'No message returned';
-        console.log("Raw GPT Response:", newMessage);
-
-        let parseMessage;
-        try {
-          if (typeof newMessage === 'string') {
-            // Clean the JSON response before parsing
-            newMessage = cleanJsonResponse(newMessage);
-            parseMessage = JSON.parse(newMessage);
-          }
-
-          console.log("Parsed Message:", newMessage);
-          
-          const valuesToAppend = [[parseMessage.passage, parseMessage.question, parseMessage.correct_answer]];
-
-          await appendToSheet(valuesToAppend, newSheet); // Append to Google Sheets
-          
-          console.log(`Response for ${file.name} appended to Google Sheets!`);
-          
-    
-          responses.push({
-            file: file.name,
-            response: parseMessage,
-          });
-        } catch (error) {
-          console.error(`Error parsing response for ${file.name}:`, error.message);
-          responses.push({
-            file: file.name,
-            error: "Failed to parse OpenAI response",
-          });
-        }
+        localImagePaths.push(localPath);
+        processedFiles.push(file.name);
+        console.log(`✅ Downloaded ${file.name} to ${localPath}`);
       } catch (error) {
-        console.error(`Error processing file ${file.name}:`, error.message);
-        responses.push({
-          file: file.name,
-          error: error.message,
-        });
+        console.error(`Error downloading file ${file.name}:`, error.message);
+        failedFiles.push({ name: file.name, reason: error.message });
       }
     }
 
-     
-  // Generate unique filename
-  const uniqueFileName = generateUniqueFileName(newSheet);
-  
-  await exportSheetToXLSX(SPREADSHEET_ID, newSheet, uniqueFileName);
-  await uploadXLSXToDrive(uniqueFileName, EXPORT_FOLDER_ID);
-  
-  await processExcelFile(uniqueFileName, newSheet)
-    .then(result => console.log('Final JSON result:', JSON.stringify(result, null, 2)))
-    .catch(error => console.error('Processing failed:', error.message));
+    // Process all downloaded images using the transcribeImages function
+    const responses = await transcribeImages(localImagePaths, newSheet);
 
-  // Optionally, clean up the local file after processing
-  try {
-    fs.unlinkSync(uniqueFileName);
-    console.log(`✅ Cleaned up temporary file: ${uniqueFileName}`);
-  } catch (error) {
-    console.error(`❌ Error cleaning up file: ${error.message}`);
-  }
+    // Generate unique filename and process Excel file
+    const uniqueFileName = generateUniqueFileName(newSheet);
+    await exportSheetToXLSX(SPREADSHEET_ID, newSheet, uniqueFileName);
+    await uploadXLSXToDrive(uniqueFileName, EXPORT_FOLDER_ID);
+    
+    // Clean up temporary files
+    try {
+      fs.unlinkSync(uniqueFileName);
+      console.log(`✅ Cleaned up temporary file: ${uniqueFileName}`);
+      
+      // Clean up downloaded images
+      localImagePaths.forEach(imagePath => {
+        fs.unlinkSync(imagePath);
+        console.log(`✅ Cleaned up image file: ${imagePath}`);
+      });
+    } catch (error) {
+      console.error(`❌ Error cleaning up files: ${error.message}`);
+    }
 
-
+    // Return detailed success response
     return res.status(200).json({
-      success: true,  
-      message: 'Processed all files in the folder.',
+      success: true,
+      message: `Successfully processed ${processedFiles.length} files and created sheet "${newSheet}"`,
+      details: {
+        total_files: files.length,
+        processed_files: processedFiles,
+        failed_files: failedFiles,
+        sheet_name: newSheet
+      },
       data: responses,
     });
+
   } catch (error) {
-    console.error('Error processing files from folder:', error.message);
+    console.error('Error in transcribe endpoint:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to process files from folder.',
-      error: error.message,
+      message: error.message || 'An unexpected error occurred while processing files.',
+      details: {
+        type: error.name,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        total_files: 0,
+        processed_files: [],
+        failed_files: [],
+        sheet_name: null
+      }
     });
   } 
 });
@@ -954,19 +976,20 @@ async function clearOldDriveFiles(folderId) {
 async function exportSheetToXLSX(spreadsheetId, sheetName, destinationPath) {
   try {
       const auth = new google.auth.GoogleAuth({
-          keyFile: SERVICE_ACCOUNT_FILE, // Use the credentials file
+          keyFile: SERVICE_ACCOUNT_FILE,
           scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
       });
 
       const sheets = google.sheets({ version: 'v4', auth });
 
-      // Fetch data from the specified sheet tab
-      const response = await sheets.spreadsheets.get({
+      // Fetch data from the specified sheet tab with more complete fields
+      const response = await sheets.spreadsheets.values.get({
           spreadsheetId,
-          ranges: [`${sheetName}!A:G`],
+          range: `${sheetName}!A:G`,
+          valueRenderOption: 'FORMATTED_VALUE'
       });
 
-      const rows = response.data.sheets[0].data[0].rowData || [];
+      const rows = response.data.values || [];
       if (!rows || rows.length === 0) {
           throw new Error(`No data found in sheet "${sheetName}".`);
       }
@@ -978,9 +1001,17 @@ async function exportSheetToXLSX(spreadsheetId, sheetName, destinationPath) {
 
       // Save to an XLSX file
       XLSX.writeFile(workbook, destinationPath);
+      
+      // Verify file was created
+      if (!fs.existsSync(destinationPath)) {
+          throw new Error(`Failed to create file at ${destinationPath}`);
+      }
+      
       console.log(`✅ Sheet "${sheetName}" exported to ${destinationPath}`);
+      return true;
   } catch (error) {
       console.error('❌ Error exporting sheet to XLSX:', error.message);
+      throw error;
   }
 }
 
@@ -1203,6 +1234,7 @@ app.post('/generate-questions', async (req, res) => {
 
     const rows = response.data.sheets[0].data[0].rowData || [];
     let processedRows = 1;
+    let consecutiveSkips = 0;
     
     for (const rowData of rows.slice(1)) {
       const cells = rowData.values;
@@ -1215,66 +1247,47 @@ app.post('/generate-questions', async (req, res) => {
       const questionType = cells[5]?.formattedValue || '';
       const difficultyLevel = cells[6]?.formattedValue || '';
 
+
+
+
       // Check for the word "Answer" and skip processing if found
       if ([passage, question, answer, passageType, questionType, difficultyLevel].some(field => field.includes("Answer"))) {
         console.log(`Skipping row ${processedRows + 1} due to presence of "Answer"`);
+        consecutiveSkips++;
+        if (consecutiveSkips >= 3) {
+          console.log('Three consecutive skips detected, stopping generation');
+          break;
+        }
         processedRows++;
-        continue; // Skip the current row
+        continue;
       }
 
       if (!passage || !question) {
         console.log('Skipping row due to missing data');
+        consecutiveSkips++;
+        if (consecutiveSkips >= 3) {
+          console.log('Three consecutive skips detected, stopping generation');
+          break;
+        }
         continue;
       }
 
+      // Reset consecutive skips counter since we found a valid row
+      consecutiveSkips = 0;
+
       try {
+        console.log(`\n🔄 Processing Sheet: ${sheetName} | Row: ${processedRows}`);
+
         const completion = await openai.chat.completions.create({
           model: "gpt-4o",
           messages: [
             {
               role: "system",
-              content: `You are an expert SAT question generator. Your task is to create new, engaging questions that match the style and difficulty of the SAT.
-
-Key requirements for your responses:
-1. Use appropriate formatting to enhance readability and emphasis:
-   - Bold (**text**) ONLY when you think it is necessary.
-   - Italics (*text*) ONLY for titles of works, foreign words, or emphasis
-   - Underline (_text_) ONLY when the question asks for it, e.g. "What is the purpose of the underlined section?"
-   - Quotes ("text") for direct quotations
-2. Use proper line breaks:
-   - \\n for single line breaks
-   - \\n\\n for paragraph breaks
-3. If the question involves a graph or visual element, start with %GRAPH%
-4. Maintain consistent difficulty level and question type
-5. Ensure historical/scientific accuracy
-6. Create clear, unambiguous answer choices
-7. A question cannot be formatted twice, e.g. _**text**_ is invalid.
-
-Return ONLY in this JSON format:
-{
-  "passage": "[formatted passage]",
-  "question": "[formatted question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",
-  "correct_answer": "[Letter]"
-}`
+              content: `You are an expert SAT question generator. Your task is to create new, engaging questions that match the style and difficulty of the SAT.\n\nKey requirements for your responses:\n1. Use appropriate formatting to enhance readability and emphasis:\n   - Bold (**text**) ONLY when you think it is necessary.\n   - Italics (*text*) ONLY for titles of works, foreign words, or emphasis\n   - Underline ({text}) ONLY when the question asks for it, e.g. "What is the purpose of the underlined section?"\n   - Quotes ("text") for direct quotations\n2. Use proper line breaks:\n   - \\n for single line breaks\n   - \\n\\n for paragraph breaks\n3. If the question involves a graph or visual element, start with %GRAPH%\n4. Maintain consistent difficulty level and question type\n5. Ensure historical/scientific accuracy\n6. Create clear, unambiguous answer choices\n7. A question cannot be formatted twice, e.g. _**text**_ is invalid.\n\nReturn ONLY in this JSON format:\n{\n  "passage": "[formatted passage]",\n  "question": "[formatted question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",\n  "correct_answer": "[Letter]"\n}`
             },
             {
               role: "user",
-              content: `Create a new SAT question based on these parameters:
-{
-  "original_passage": "${passage}",
-  "original_question": "${question}",
-  "required_answer": "${answer}",
-  "passage_type": "${passageType}",
-  "question_type": "${questionType}",
-  "difficulty": "${difficultyLevel}"
-}
-
-Requirements:
-1. Create a completely new passage and question that tests the same skills
-2. Match the difficulty level and question type
-3. The correct answer must be "${answer}"
-4. Apply appropriate formatting (bold, italic, underline) where it enhances understanding
-5. Use different proper nouns and context while maintaining the same concept`
+              content: `Create a new SAT question based on these parameters:\n{\n  "original_passage": "${passage}",\n  "original_question": "${question}",\n  "required_answer": "${answer}",\n  "passage_type": "${passageType}",\n  "question_type": "${questionType}",\n  "difficulty": "${difficultyLevel}"\n}\n\nRequirements:\n1. Create a completely new passage and question that tests the same skills\n2. Match the difficulty level and question type\n3. The correct answer must be "${answer}"\n4. Apply appropriate formatting (bold, italic, underline) where it enhances understanding\n5. Use different proper nouns and context while maintaining the same concept`
             }
           ],
         });
@@ -1356,38 +1369,17 @@ app.post('/regenerate', async (req, res) => {
     console.log("Formatted values", passage, question, answer, passageType, questionType, difficultyLevel);
     console.log(`\n🔄 Processing Sheet: ${sheetName} | Row: ${row}`);
 
-    const prompt = `You are an expert SAT question generator. Your task is to create new, engaging questions that match the style and difficulty of the SAT.
-
-Key requirements for your responses:
-1. Use appropriate formatting to enhance readability and emphasis:
-   - Bold (**text**) ONLY when you think it is necessary.
-   - Italics (*text*) ONLY for titles of works, foreign words, or emphasis
-   - Underline (_text_) ONLY when the question asks for it, e.g. "What is the purpose of the underlined section?"
-   - Quotes ("text") for direct quotations
-2. Use proper line breaks:
-   - \\n for single line breaks
-   - \\n\\n for paragraph breaks
-3. If the question involves a graph or visual element, start with %GRAPH%
-4. Maintain consistent difficulty level and question type
-5. Ensure historical/scientific accuracy
-6. Create clear, unambiguous answer choices
-7. A question cannot be formatted twice, e.g. _**text**_ is invalid.
-
-Return ONLY in this JSON format:
-{
-  "passage": "[formatted passage]",
-  "question": "[formatted question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",
-  "correct_answer": "[Letter]"
-}`;
-
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
           role: "system",
-          content: "You are a helpful assistant that generates SAT-based reading and writing questions. You must be clear and concise. For fill-in-the-blank questions, always use exactly three underscores (___). Return in valid JSON format"
+          content: `You are an expert SAT question generator. Your task is to create new, engaging questions that match the style and difficulty of the SAT.\n\nKey requirements for your responses:\n1. Use appropriate formatting to enhance readability and emphasis:\n   - Bold (**text**) ONLY when you think it is necessary.\n   - Italics (*text*) ONLY for titles of works, foreign words, or emphasis\n   - Underline ({text}) ONLY when the question asks for it, e.g. "What is the purpose of the underlined section?"\n   - Quotes ("text") for direct quotations\n2. Use proper line breaks:\n   - \\n for single line breaks\n   - \\n\\n for paragraph breaks\n3. If the question involves a graph or visual element, start with %GRAPH%\n4. Maintain consistent difficulty level and question type\n5. Ensure historical/scientific accuracy\n6. Create clear, unambiguous answer choices\n7. A question cannot be formatted twice, e.g. _**text**_ is invalid.\n\nReturn ONLY in this JSON format:\n{\n  "passage": "[formatted passage]",\n  "question": "[formatted question]\\n\\nA) [Option A]\\nB) [Option B]\\nC) [Option C]\\nD) [Option D]\\n\\n",\n  "correct_answer": "[Letter]"\n}`
         },
-        { role: "user", content: prompt }
+        {
+          role: "user",
+          content: `Create a new SAT question based on these parameters:\n{\n  "original_passage": "${passage}",\n  "original_question": "${question}",\n  "required_answer": "${answer}",\n  "passage_type": "${passageType}",\n  "question_type": "${questionType}",\n  "difficulty": "${difficultyLevel}"\n}\n\nRequirements:\n1. Create a completely new passage and question that tests the same skills\n2. Match the difficulty level and question type\n3. The correct answer must be "${answer}"\n4. Apply appropriate formatting (bold, italic, underline) where it enhances understanding\n5. Use different proper nouns and context while maintaining the same concept. The answer has to be ${answer}`
+        }
       ],
     });
 
